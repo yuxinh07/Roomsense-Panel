@@ -222,3 +222,53 @@ node --experimental-sqlite tools/test_local.mjs
 ```
 
 会用内存 SQLite 跑一遍建表、灌数据、聚合、导入，验证输出与现有看板一致。
+
+---
+
+## 九、代码托管（GitHub）
+
+### Python 脚本要不要传？
+
+`tools/*.py` 是**一次性生成工具**：`build_frontend.py` 把 dashboard.html 拆成前端三件套、
+`build_seed.py` 生成 seed.sql、`reorder_and_inject.py` 调整板块顺序。
+它们**不参与部署** —— `wrangler deploy` 只上传 `public/` 和 `src/worker.js`。
+删掉这 4 个 py，已经上线的看板照样跑。
+
+但**建议整个项目一起传 GitHub**：改坏了能回退、换电脑能恢复、别人接手看得懂来龙去脉。
+
+### 安全红线（已配好）
+
+`.gitignore` 已排除：
+
+| 路径 | 为什么 |
+|---|---|
+| `node_modules/` | 几万个小文件 |
+| `.wrangler/` | 本地部署缓存 |
+| `.dev.vars` / `.dev.vars.*` | **本地密钥文件** |
+| `tools/.env.feishu` | **飞书真实凭证** |
+
+`tools/setup_feishu.sh` **不含任何密钥**（改成从环境变量读），可以安全提交。
+真实值放 `tools/.env.feishu`（复制 `.env.feishu.example` 而来），已在 gitignore 里。
+
+> ⚠️ **`seed.sql` 里有真实经营数据**（各周销售额、库存、采购价）。
+> 推 GitHub 请务必建 **私有仓库**。
+
+### 首次推送
+
+本地仓库已经初始化并提交好了，你在 GitHub 建一个**空的私有仓库**，然后：
+
+```bash
+cd roomsense-cloud
+git remote add origin git@github.com:<你的用户名>/<仓库名>.git
+git branch -M main
+git push -u origin main
+```
+
+### 关于自动部署
+
+**这套架构不能用 Cloudflare Pages 的 GitHub 自动部署** —— Pages 是静态站点托管，
+跑不了 Worker + D1 这套。GitHub 在这里的价值是**版本管理和备份**，
+上线仍然靠本地 `npx wrangler deploy`。
+
+（真想要 push 即部署，可以配 GitHub Actions 跑 `wrangler deploy`，
+需要额外加 `CLOUDFLARE_API_TOKEN` 到仓库 Secrets，有需要再说。）
