@@ -72,11 +72,12 @@ files.push(['03_库存.csv', inv.length + ' 行（快照日期留空=今天）']
 const master = q('SELECT sku, name, category, spec, cost, cost_currency, price_aud, fulfil_pct, lead_time_days, safety_days FROM sku_master ORDER BY sku')
   .map((r) => ({
     SKU: r.sku, 品名: r.name || '', 品类: r.category || '', 规格: r.spec || '',
-    采购价: r.cost, 币种: r.cost_currency, 售价AUD: r.price_aud, 履约费率: r.fulfil_pct,
+    采购价: r.cost, 币种: r.cost_currency, 售价AUD: r.price_aud,
+    履约费率: r.fulfil_pct, 单件履约费: r.fulfil_per_unit,
     补货提前期: r.lead_time_days, 安全库存天数: r.safety_days,
   }));
 fs.writeFileSync(path.join(OUT, '04_SKU主数据.csv'),
-  csv(['SKU', '品名', '品类', '规格', '采购价', '币种', '售价AUD', '履约费率', '补货提前期', '安全库存天数'], master), 'utf8');
+  csv(['SKU', '品名', '品类', '规格', '采购价', '币种', '售价AUD', '履约费率', '单件履约费', '补货提前期', '安全库存天数'], master), 'utf8');
 files.push(['04_SKU主数据.csv', master.length + ' 行']);
 
 // ---------- 5. 平台周销售额（W35 / W34） ----------

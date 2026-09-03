@@ -303,5 +303,71 @@ console.log('\n===== 7. 毛利告警 =====');
     `所有 ${dash.marginData.skuCount} 个 SKU 都缺成本（当前 sku_master 里 cost 全是 0）`);
 }
 
+/* ============================================================
+ * 8. 成本模型 v2：按售价% 与 按件绝对额 分开
+ *
+ * 为什么要拆：快递/处理费是按件收的，不是按售价等比收的。
+ * 一刀切百分比会让低单价商品（枕头）毛利虚高、高单价商品（床垫）毛利虚低，
+ * 加投决策会做反。这里用两个极端例子把这个偏差钉死。
+ * ========================================================== */
+console.log('\n===== 8. 成本模型 v2（% 与 按件 分开）=====');
+{
+  // 床垫：ASP 419，佣金 15%，单件履约 45（快递+出入库）
+  // 枕头：ASP  38，佣金 15%，单件履约 12
+  const sales = [
+    { sku: 'MA-M', order_date: '2026-08-10', revenue: 419, qty: 1, category: '床垫' },
+    { sku: 'PL-P', order_date: '2026-08-10', revenue: 38, qty: 1, category: '枕头' },
+  ];
+  const master = [
+    { sku: 'MA-M', cost: 800, cost_currency: 'RMB', fulfil_pct: 0, fulfil_per_unit: 45 },
+    { sku: 'PL-P', cost: 120, cost_currency: 'RMB', fulfil_pct: 0, fulfil_per_unit: 12 },
+  ];
+  const meta = { margin_month: '2026-08', fx_aud_cny: 4.7, fulfil_pct: 0, fulfil_per_unit: 0, fulfil_pct_confirmed: '1' };
+  const d = buildMargin(sales, master, [], meta);
+  const mm = d.rows.find((r) => r.sku === 'MA-M');
+  const pp = d.rows.find((r) => r.sku === 'PL-P');
+
+  ok(mm.fulfilPerUnit === 45, `床垫单件履约费 45（实际 ${mm.fulfilPerUnit}）`);
+  ok(mm.asp === 419, `床垫 ASP 419（实际 ${mm.asp}）`);
+  ok(Math.abs(mm.unitFulfil - 45) < 0.01, `床垫履约只算按件部分：0% × 419 + 45 = 45（实际 ${mm.unitFulfil}）`);
+  // 采购成本 800 / 4.7 = 170.21
+  ok(Math.abs(mm.unitCostAud - 170.21) < 0.02, `床垫采购成本 800/4.7 = 170.21（实际 ${mm.unitCostAud}）`);
+  ok(Math.abs(mm.unitMargin - (419 - 170.21 - 45)) < 0.02,
+    `床垫单件毛利 = 419 − 170.21 − 45 = 203.79（实际 ${mm.unitMargin}）`);
+
+  ok(pp.unitFulfil === 12, `枕头履约 12（实际 ${pp.unitFulfil}）`);
+  ok(Math.abs(pp.unitCostAud - 25.53) < 0.02, `枕头采购成本 120/4.7 = 25.53（实际 ${pp.unitCostAud}）`);
+  ok(Math.abs(pp.unitMargin - (38 - 25.53 - 12)) < 0.02,
+    `枕头单件毛利 = 38 − 25.53 − 12 = 0.47（实际 ${pp.unitMargin}）`);
+
+  // 关键：枕头实际履约费率 12/38 = 31.6%，床垫 45/419 = 10.7%
+  const pillowPct = (12 / 38) * 100;
+  const mattressPct = (45 / 419) * 100;
+  ok(pillowPct > mattressPct * 2.5,
+    `低单价的枕头履约费率 ${pillowPct.toFixed(1)}% 远高于床垫 ${mattressPct.toFixed(1)}% —— 一刀切会失真`);
+}
+
+console.log('\n===== 8b. 旧行为不炸：fulfil_per_unit 为 0 时退化成纯百分比 =====');
+{
+  const sales = [{ sku: 'X', order_date: '2026-08-10', revenue: 100, qty: 1, category: 'c' }];
+  const master = [{ sku: 'X', cost: 100, cost_currency: 'AUD', fulfil_pct: 30, fulfil_per_unit: 0 }];
+  const meta = { margin_month: '2026-08', fx_aud_cny: 4.7, fulfil_pct: 30, fulfil_per_unit: 0, fulfil_pct_confirmed: '1' };
+  const d = buildMargin(sales, master, [], meta);
+  const r = d.rows.find((x) => x.sku === 'X');
+  ok(Math.abs(r.unitFulfil - 30) < 0.01, `履约 = 100 × 30% + 0 = 30（实际 ${r.unitFulfil}）`);
+  ok(Math.abs(r.unitMargin - (-30)) < 0.01, `单件毛利 = 100 − 100 − 30 = −30（实际 ${r.unitMargin}）`);
+}
+
+console.log('\n===== 8c. 全局兜底：SKU 没填就用 meta.fulfil_per_unit =====');
+{
+  const sales = [{ sku: 'Y', order_date: '2026-08-10', revenue: 200, qty: 1, category: 'c' }];
+  const master = [{ sku: 'Y', cost: 50, cost_currency: 'AUD', fulfil_pct: 0, fulfil_per_unit: 0 }];
+  const meta = { margin_month: '2026-08', fx_aud_cny: 4.7, fulfil_pct: 10, fulfil_per_unit: 25, fulfil_pct_confirmed: '1' };
+  const d = buildMargin(sales, master, [], meta);
+  const r = d.rows.find((x) => x.sku === 'Y');
+  // ASP 200 × 10% = 20，加按件 25 → 45
+  ok(Math.abs(r.unitFulfil - 45) < 0.01, `履约 = 200 × 10% + 25 = 45（实际 ${r.unitFulfil}）`);
+}
+
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====\n`);
 process.exit(fail ? 1 : 0);

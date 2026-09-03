@@ -41,7 +41,9 @@ CREATE TABLE IF NOT EXISTS sku_master (
   cost_currency TEXT DEFAULT 'RMB',
   price_aud   REAL DEFAULT 0,           -- 单件售价 ex.GST (AUD)。0 = 从销售明细反推 ASP
                                         -- 没填也不慌：有销售明细时系统用 营收/销量 自动算 ASP
-  fulfil_pct  REAL DEFAULT 0,           -- 该 SKU 的佣金+履约费率 %。0 = 用 meta.fulfil_pct
+  fulfil_pct  REAL DEFAULT 0,           -- 该 SKU 的【按售价%】成本：销售佣金+平台佣金+退货损耗。0 = 用 meta.fulfil_pct
+  fulfil_per_unit REAL DEFAULT 0,       -- 该 SKU 的【按件】履约成本 AUD/件：头程+卸货+入出库处理+快递。0 = 用 meta.fulfil_per_unit
+                                        -- 这两个要分开：佣金随售价等比变，快递/处理费是按件收的、跟售价不成比例
                                         -- 大件（床垫）和小件（枕头）费率差很多，能分开就分开填
   lead_time_days INTEGER DEFAULT 0,     -- 补货提前期（下单→入仓）天数。0 = 用 meta.lead_time_days
                                         -- 海运中国→澳洲通常 40~50 天，空运 7~12 天，按 SKU 实际填
@@ -121,9 +123,13 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
   ('sku_top_n', '10'),                -- SKU 趋势图展示前 N 个 SKU
 
   -- ↓ 毛利计算参数。全部是「待核验」的估值，拿到真实数字请覆盖
-  ('fulfil_pct', '30'),               -- 佣金+履约（仓租/入出库/快递）合计占售价 %
+  ('fulfil_pct', '30'),               -- 【按售价%】的成本：销售佣金 + 平台佣金 + 退货损耗
                                       -- 30% 是澳洲大件家居的行业经验值，不是 RoomSense 真实费率
                                       -- 前端会持续告警，直到这里被真实数字覆盖
+  ('fulfil_per_unit', '0'),           -- 【按件】的履约成本 AUD/件：头程运费 + 卸货 + 入出库处理 + 快递
+                                      -- 0 = 只用 fulfil_pct（旧行为）
+                                      -- ⚠ 不要把广告费填进来 —— 广告费走「安全垫 = 毛利率 − ACOS」单独算，
+                                      --    塞这里会被扣两次（一次算毛利、一次算 ACOS），所有产品都会显示投流亏损
   ('fulfil_pct_confirmed', '0'),      -- 1 = 已核实过这个费率（告警消失）
   ('margin_month', '2026-08'),        -- 定位矩阵看哪个月的毛利（YYYY-MM）
 
@@ -145,4 +151,5 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
 --   ALTER TABLE sales_orders ADD COLUMN fx_rate  REAL DEFAULT 1;
 --   ALTER TABLE sku_master    ADD COLUMN price_aud  REAL DEFAULT 0;
 --   ALTER TABLE sku_master    ADD COLUMN fulfil_pct REAL DEFAULT 0;
+--   ALTER TABLE sku_master    ADD COLUMN fulfil_per_unit REAL DEFAULT 0;
 -- ───────────────────────────────────────────────────────

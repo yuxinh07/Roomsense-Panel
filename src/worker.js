@@ -203,6 +203,7 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
   const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
   const fxAudCny = Number(meta.fx_aud_cny || 0);
   const globalFulfil = Number(meta.fulfil_pct ?? DEFAULT_FULFIL_PCT);
+  const globalPerUnit = Number(meta.fulfil_per_unit ?? 0);
   const confirmed = String(meta.fulfil_pct_confirmed || '0') === '1';
   const master = indexBy(skuMaster, 'sku');
 
@@ -278,8 +279,15 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
       }
     }
 
+    // 成本模型 v2：把「随售价等比变」和「按件固定收」两类成本分开算。
+    //   佣金类（销售佣金/平台佣金/退货损耗）→ 按售价 %
+    //   履约类（头程/卸货/入出库处理/快递）→ AUD/件，跟售价不成比例
+    // 为什么必须分开：快递和处理费是按件/按重量收的。床垫 A$419 快递 A$45(10.7%)、
+    // 枕头 A$38 快递 A$12(31.6%) —— 一刀切 30% 会低估枕头成本、高估床垫成本，加投决策会做反。
+    // fulfil_per_unit 为 0 时退化成旧的纯百分比算法，老数据不会炸。
     const fulfilPct = num(m.fulfil_pct) || globalFulfil;
-    const unitFulfil = asp * (fulfilPct / 100);
+    const fulfilPerUnit = num(m.fulfil_per_unit) || globalPerUnit;
+    const unitFulfil = asp * (fulfilPct / 100) + fulfilPerUnit;
 
     const hasCost = unitCostAud !== null && unitCostAud > 0 && asp > 0;
     const unitMargin = hasCost ? asp - unitCostAud - unitFulfil : null;
@@ -302,6 +310,7 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
       asp: round2(asp),
       unitCostAud: unitCostAud === null ? null : round2(unitCostAud),
       fulfilPct: round2(fulfilPct),
+      fulfilPerUnit: round2(fulfilPerUnit),
       unitFulfil: round2(unitFulfil),
       unitMargin: unitMargin === null ? null : round2(unitMargin),
       marginPct: marginPct === null ? null : round2(marginPct),
@@ -932,6 +941,7 @@ async function upsertSkuMaster(env, records) {
   const extra = [];
   if (has('price_aud')) extra.push('price_aud');
   if (has('fulfil_pct')) extra.push('fulfil_pct');
+  if (has('fulfil_per_unit')) extra.push('fulfil_per_unit');
   if (has('lead_time_days')) extra.push('lead_time_days');
   const all = base.concat(extra);
 
@@ -959,6 +969,7 @@ async function upsertSkuMaster(env, records) {
       ];
       if (has('price_aud')) vals.push(num(r.price_aud ?? r['售价AUD'] ?? 0));
       if (has('fulfil_pct')) vals.push(num(r.fulfil_pct ?? r['履约费率'] ?? 0));
+      if (has('fulfil_per_unit')) vals.push(num(r.fulfil_per_unit ?? r['单件履约费'] ?? 0));
       if (has('lead_time_days')) vals.push(num(r.lead_time_days ?? r['补货提前期'] ?? 0));
       return stmt.bind(...vals);
     });

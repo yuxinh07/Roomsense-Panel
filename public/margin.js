@@ -90,8 +90,12 @@
     // 口径说明 + 待核验标记
     var caveats = [];
     if (!m.fulfilPctConfirmed) {
-      caveats.push('佣金+履约费率用的是估算值 ' + m.fulfilPct + '%（澳洲大件家居经验值，不是 RoomSense 真实费率）');
+      var fee = m.fulfilPerUnit > 0
+        ? m.fulfilPct + '% + A$' + m.fulfilPerUnit + '/件'
+        : m.fulfilPct + '%';
+      caveats.push('佣金+履约成本用的是估算值 ' + fee + '（澳洲大件家居经验值，不是 RoomSense 真实费率）');
     }
+    caveats.push('广告费不计入毛利，走「安全垫 = 毛利率 − ACOS」单独判断');
     if (m.fxAudCny) caveats.push('人民币成本按 1 AUD = ' + m.fxAudCny + ' RMB 折算');
     if (!m.adsHasData) caveats.push('本月没有广告数据，ACOS 与安全垫暂时算不出来');
     if (m.missingCost > 0) caveats.push(m.missingCost + '/' + m.skuCount + ' 个 SKU 还没填采购成本');
