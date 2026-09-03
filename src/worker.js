@@ -973,10 +973,18 @@ async function insertAds(env, records) {
  *   FEISHU_TABLE_ID_SKU SKU 主数据表
  *
  * 列名（中英文都认，中文优先）：
- *   销售明细：订单日期/平台/订单号/SKU/品类/销量/销售额
- *   库存：    SKU/品类/现有库存/在途/安全库存/预计到货
+ *   销售明细：订单日期/平台/订单号/SKU/品类/销量/商品销售额/邮费收入/币种/汇率
+ *             （旧格式只填「销售额」也兼容，见 resolveAmounts）
+ *   库存：    快照日期/SKU/品类/现有库存/在途/安全库存/预计到货
+ *             快照日期只取【第一行】给整批用，一次导入别混日期
  *   广告：    周次/平台/广告活动/花费/广告销售额/订单数
- *   SKU主数据：SKU/品名/品类/规格/采购价/币种/安全库存天数
+ *   SKU主数据：SKU/品名/品类/规格/采购价/币种/售价AUD/履约费率/补货提前期/安全库存天数
+ *
+ * 同步策略：
+ *   销售明细  删 source='feishu' 再全量写入（CSV 导入的历史不受影响）
+ *   库存/SKU  按 SKU 覆盖更新（多维表没有的 SKU 不会被删）
+ *   广告      全量替换（多维表删行 = 数据库删行）
+ *   库存快照  每次同步追加一条当天记录，同日重复只覆盖
  * ========================================================== */
 async function syncFromFeishu(env) {
   const { FEISHU_APP_ID, FEISHU_APP_SECRET, FEISHU_TABLE_TOKEN, FEISHU_TABLE_ID } = env;
@@ -994,7 +1002,7 @@ async function syncFromFeishu(env) {
     salesCount = await insertSales(env, sales.map((f) => ({ ...f, source: 'feishu' })));
   }
 
-  // 2) 库存：按 SKU 覆盖更新
+  // 2) 库存：按 SKU 覆盖更新 + 追加当天快照（同日重复同步只覆盖）
   let invCount = 0;
   if (env.FEISHU_TABLE_ID_INV) {
     const rows = await fetchAllFeishuRecords(env, token, env.FEISHU_TABLE_ID_INV);
