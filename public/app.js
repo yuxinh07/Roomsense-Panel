@@ -221,6 +221,153 @@ invData.forEach(r => {
   `;
 });
 
+// ===== 产品定位矩阵（库存/在途/可售天 从 invData 动态取）=====
+const productMatrix = [
+  {
+    sku: 'XFKF-MA-1772-26-D', cat: '床垫',
+    q13: '18', q4: '10', mom: '2.81 ↑', weeks: '9/13',
+    acos: '7.3% / 27.7%', est: 'A$5,974',
+    tag: '主力加投', tagBg: '#dbeafe', tagFg: '#1e40af',
+    note: '库存告急，先补货再加投；手动广告 ACOS 27.7% 需压预算'
+  },
+  {
+    sku: 'XFKF-MA-1666-34-Q', cat: '床垫',
+    q13: '14', q4: '6', mom: '1.69 ↑', weeks: '9/13',
+    acos: '6.4% / 50.5%(已停)', est: 'A$4,647',
+    tag: '主力加投', tagBg: '#dbeafe', tagFg: '#1e40af',
+    note: '自动广告 ACOS 6.4% 全场最优，加大投流；手动保持暂停'
+  },
+  {
+    sku: 'XFKF-MA-1667-30-K', cat: '床垫',
+    q13: '6', q4: '4', mom: '4.50 ↑↑', weeks: '4/13',
+    acos: '4.6% / 10.4%', est: 'A$1,991',
+    tag: '主力加投', tagBg: '#dbeafe', tagFg: '#1e40af',
+    note: '动量最强（4.5x），加大投流测试；动销周偏少需先养 Listing'
+  },
+  {
+    sku: 'XFKF-PL-1167F-WH', cat: '枕头',
+    q13: '28', q4: '11', mom: '1.46 ↑', weeks: '8/13',
+    acos: '9.4% (已停)', est: 'A$1,204',
+    tag: '潜力培育', tagBg: '#dcfce7', tagFg: '#166534',
+    note: '枕头线唯一在跑的款，补货到位后重启广告，主推加购'
+  },
+  {
+    sku: 'XFKF-MA-1772-26-Q', cat: '床垫',
+    q13: '20', q4: '5', mom: '0.75 ↓', weeks: '8/13',
+    acos: '7.3% / 27.7%', est: 'A$6,638',
+    tag: '减投去化', tagBg: '#fef3c7', tagFg: '#92400e',
+    note: '销售额第一但动量下滑，可售 314 天严重过剩，黑五去库存'
+  },
+  {
+    sku: 'XFKF-MA-1667-30-D', cat: '床垫',
+    q13: '11', q4: '2', mom: '0.50 ↓', weeks: '8/13',
+    acos: '4.6% / 10.4%', est: 'A$3,651',
+    tag: '维持观察', tagBg: '#f3f4f6', tagFg: '#374151',
+    note: '动量下滑但 ACOS 优秀，维持预算，黑五观察转化'
+  },
+  {
+    sku: 'XFKF-MA-1772-26-KS', cat: '床垫',
+    q13: '8', q4: '2', mom: '0.75 ↓', weeks: '6/13',
+    acos: '7.3% / 27.7%', est: 'A$2,655',
+    tag: '减投去化', tagBg: '#fef3c7', tagFg: '#92400e',
+    note: '可售 157 天，减少手动广告预算，黑五捆绑去化'
+  },
+  {
+    sku: 'XFKF-MA-1772-26-S', cat: '床垫',
+    q13: '7', q4: '2', mom: '0.90 →', weeks: '4/13',
+    acos: '7.3% / 27.7%', est: 'A$2,323',
+    tag: '减投去化', tagBg: '#fef3c7', tagFg: '#92400e',
+    note: '动销仅 4/13 周，暂停手动广告，仅保留自动'
+  },
+  {
+    sku: 'XFKF-PL-1168R-WH', cat: '枕头',
+    q13: '21', q4: '4', mom: '0.53 ↓', weeks: '7/13',
+    acos: '9.4% (已停)', est: 'A$903',
+    tag: '减投去化', tagBg: '#fef3c7', tagFg: '#92400e',
+    note: '可售 93 天、动销放缓，暂不重开广告，黑五清一波'
+  },
+  {
+    sku: 'XFKF-PL-1169R-WH', cat: '枕头',
+    q13: '43', q4: '0', mom: '0.00 断货', weeks: '7/13',
+    acos: '9.4% (已停)', est: 'A$1,849',
+    tag: '断货重启', tagBg: '#ede9fe', tagFg: '#5b21b6',
+    note: '销量冠军断货 5 周，到货后立刻重开广告冲黑五，建议补 150 件'
+  },
+  {
+    sku: 'XFKF-MA-1666-34-S', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '6.4% / 50.5%(已停)', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '13周销量未进 TOP10，暂停追加补货，黑五捆绑/Outlet 出清'
+  },
+  {
+    sku: 'XFKF-MA-1666-34-KS', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '6.4% / 50.5%(已停)', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '同上，先核验 Listing 是否正常上架与曝光'
+  },
+  {
+    sku: 'XFKF-MA-1666-34-D', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '6.4% / 50.5%(已停)', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '同上'
+  },
+  {
+    sku: 'XFKF-MA-1667-30-S', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '4.6% / 10.4%', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '同上；系列 ACOS 健康，可留一件做黑五凑单品'
+  },
+  {
+    sku: 'XFKF-MA-1667-30-KS', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '4.6% / 10.4%', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '同上'
+  },
+  {
+    sku: 'XFKF-MA-1667-30-Q', cat: '床垫',
+    q13: '&lt;6', q4: '-', mom: '—', weeks: '未进TOP10',
+    acos: '4.6% / 10.4%', est: '—',
+    tag: '清仓/停补', tagBg: '#fee2e2', tagFg: '#991b1b',
+    note: '压货最重：库存 32 + 在途 39 = 71 件，立即暂停补货并出清'
+  },
+];
+
+function renderProductMatrix(invList) {
+  const body = document.getElementById('productMatrixBody');
+  if (!body) return;
+  const bySku = {};
+  (invList || []).forEach(function (r) { bySku[r.sku] = r; });
+  body.innerHTML = productMatrix.map(function (p) {
+    const inv = bySku[p.sku];
+    const invCell  = inv ? inv.inv  : '—';
+    const recvCell = inv ? inv.recv : '—';
+    // days 为 null/undefined 表示销量过低测不出日均，标待核验
+    const daysCell = (inv && inv.days != null) ? inv.days : '待核验';
+    return ''
+      + '<tr>'
+      + '<td><strong>' + p.sku + '</strong></td>'
+      + '<td>' + p.cat + '</td>'
+      + '<td>' + p.q13 + '</td>'
+      + '<td>' + p.q4 + '</td>'
+      + '<td>' + p.mom + '</td>'
+      + '<td>' + p.weeks + '</td>'
+      + '<td>' + invCell + '</td>'
+      + '<td>' + recvCell + '</td>'
+      + '<td>' + daysCell + '</td>'
+      + '<td style="font-size:12px">' + p.acos + '</td>'
+      + '<td>' + p.est + '</td>'
+      + '<td><span class="tag" style="background:' + p.tagBg + ';color:' + p.tagFg + ';font-weight:700">' + p.tag + '</span></td>'
+      + '<td style="font-size:12px;color:#4b5563">' + p.note + '</td>'
+      + '</tr>';
+  }).join('');
+}
+renderProductMatrix(invData);
+
 // ===== Cost Breakdown Table =====
 const costData = [
   { item: '销售佣金 (Sales Commission)', jun: 199, jul: 692 },
