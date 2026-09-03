@@ -144,5 +144,71 @@ console.log('\n===== 4. 向后兼容（默认 pct 模式）=====');
   ok(m2.missingItems.length === 7, '7 项全缺 → 全部点名告警（不会静默给个好看的毛利）', `实得 ${m2.missingItems.length}`);
 }
 
+/* ============================================================
+ * 5. 飞书中文列名 → 数据库列的映射
+ *
+ * 这是最容易静默出错的一环：列名差一个字，flatten 出来的对象里就没有这个 key，
+ * upsertSkuMaster 取到 undefined → 存 NULL → 成本少算，且不报任何错。
+ * 所以这里用飞书表头的真实中文名走一遍入库，逐列比对落库结果。
+ * ========================================================== */
+console.log('\n===== 5. 飞书中文列名映射 =====');
+{
+  const { upsertSkuMaster, flattenFeishuFields } = await import('../src/worker.js');
+  const db = freshDb();
+  const env = {
+    DB: {
+      prepare(sql) {
+        const make = (args) => ({
+          bind(...a) { return make(a); },
+          all() { return Promise.resolve({ results: db.prepare(sql).all(...args) }); },
+          run() { db.prepare(sql).run(...args); return Promise.resolve({ success: true }); },
+          first() { return Promise.resolve(db.prepare(sql).get(...args) || null); },
+        });
+        return make([]);
+      },
+      batch(stmts) { for (const s of stmts) s.run(); return Promise.resolve([]); },
+    },
+  };
+
+  // 完全用飞书表头的中文名，模拟 syncFromFeishu 传进来的记录
+  // 走真实链路：飞书返回的 fields 先过 flattenFeishuFields（多选是数组，要拍平成字符串）
+  await upsertSkuMaster(env, [
+    flattenFeishuFields({
+      SKU: 'XFKF-MA-1666-34-Q', 品名: '1666 34cm Queen', 品类: ['Mattress'], 规格: '1666 34cm Queen',
+      采购价: 900, 币种: 'RMB', 售价AUD: 400.97,
+      头程运费: 18, 卸货费: 4, 入出库处理费: 9, 快递费: 45,
+      平台佣金: 12, 支付手续费: 1.75, 退货损耗: 3,
+      补货提前期: 45, 安全库存天数: 21,
+    }),
+    flattenFeishuFields({
+      SKU: 'XFKF-PL-1167F-WH', 品名: '1167F White', 品类: ['Pillow'], 规格: '1167F White',
+      采购价: 30, 币种: 'RMB', 售价AUD: 15.42,
+      // 只填 3 项，其余留空 → 应落 NULL（回落 meta），不能变 0
+      快递费: 12, 平台佣金: 15, 支付手续费: 1.75,
+    }),
+  ]);
+
+  const q = 'SELECT * FROM sku_master WHERE sku=?';
+  const a = db.prepare(q).get('XFKF-MA-1666-34-Q');
+  const b = db.prepare(q).get('XFKF-PL-1167F-WH');
+
+  ok(!!a && !!b, '两条记录都进了库');
+  ok(a.ship_first_leg === 18 && a.ship_unload === 4 && a.handling_inout === 9, '按件 4 项按中文列名落库', `${a.ship_first_leg}/${a.ship_unload}/${a.handling_inout}`);
+  ok(a.ship_last_mile === 45, '快递费 45 落库', `${a.ship_last_mile}`);
+  ok(a.pct_platform === 12 && a.pct_payment === 1.75 && a.pct_return === 3, '百分比 3 项落库', `${a.pct_platform}/${a.pct_payment}/${a.pct_return}`);
+  ok(near(a.price_aud, 400.97) && near(a.cost, 900), '原有列不受影响（售价/采购价）');
+
+  ok(b.ship_last_mile === 12, '枕头快递费 12 落库（小件不被大件费率套用）', `${b.ship_last_mile}`);
+  ok(b.ship_first_leg === null, '没填的项落 NULL 而不是 0（NULL 才会回落 meta 默认值）', `实得 ${JSON.stringify(b.ship_first_leg)}`);
+  ok(b.pct_return === null, '未填的退货损耗落 NULL', `实得 ${JSON.stringify(b.pct_return)}`);
+
+  // 端到端：枕头没填头程运费，meta 配了 → 必须用上 meta 的值
+  setMeta(db, 'fulfil_mode', 'breakdown');
+  setMeta(db, 'ship_first_leg', 6);
+  const m = buildMargin([], db.prepare('SELECT * FROM sku_master').all(), [], metaOf(db), { month: '2026-08' });
+  const pillow = m.rows.find((r) => r.sku === 'XFKF-PL-1167F-WH');
+  ok(near(pillow.fulfilPerUnit, 18), '枕头按件成本 = 快递12 + 头程6(来自meta) = 18', `实得 ${pillow?.fulfilPerUnit}`);
+}
+
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====\n`);
 process.exit(fail ? 1 : 0);

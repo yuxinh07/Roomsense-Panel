@@ -175,5 +175,90 @@ console.log('\n===== 5. XSS 防护 =====');
     '提醒文本通过 textContent 写入（不当 HTML 解析）');
 }
 
+/* ============================================================
+ * 6. 成本明细展开（breakdown 模式）
+ * ========================================================== */
+console.log('\n===== 6. 成本明细 tooltip =====');
+{
+  // 退货损耗刻意留 0，用来验证「没填的项不能伪装成不花钱」
+  const mkItems = (mut) => [
+    { key: 'ship_first_leg', label: '头程运费', kind: 'perUnit', unit: 'AUD/件', value: 6 },
+    { key: 'ship_unload', label: '卸货费', kind: 'perUnit', unit: 'AUD/件', value: 1.5 },
+    { key: 'handling_inout', label: '入出库处理费', kind: 'perUnit', unit: 'AUD/件', value: 3 },
+    { key: 'ship_last_mile', label: '快递费', kind: 'perUnit', unit: 'AUD/件', value: 12 },
+    { key: 'pct_platform', label: '平台佣金', kind: 'pct', unit: '%', value: 10 },
+    { key: 'pct_payment', label: '支付手续费', kind: 'pct', unit: '%', value: 1.75 },
+    { key: 'pct_return', label: '退货损耗', kind: 'pct', unit: '%', value: 0 },
+  ].map(mut || function (i) { return i; });
+
+  // 6a. 明细模式：7 项逐条展开 + 缺项点名
+  const row = baseRow({
+    fulfilItems: mkItems(),
+    fulfilMissing: ['退货损耗'],
+    fulfilPct: 11.75,
+    fulfilPerUnit: 22.5,
+    unitCostAud: 148.94,
+    unitFulfil: 57.75,
+    unitMargin: 93.31,
+  });
+  const els = withDom();
+  loadMargin().render(baseData([row], {
+    fulfilMode: 'breakdown', missingItems: ['退货损耗'], breakdownConfirmed: false,
+  }));
+  const box = els['margin-panel'];
+  const html = box.innerHTML;
+
+  ok(/采购\+履约/.test(html), '表头改成「采购+履约」（旧名「单件成本」看不出含履约）');
+  ok(/title="/.test(html), '成本单元格挂了 tooltip');
+  for (const lb of ['头程运费', '卸货费', '入出库处理费', '快递费', '平台佣金', '支付手续费', '退货损耗']) {
+    ok(html.indexOf(lb) >= 0, `tooltip 里有「${lb}」`);
+  }
+  ok(/A\$6\.00/.test(html) && /A\$12\.00/.test(html), '按件的项显示 AUD 金额');
+  ok(/10\.00%/.test(html) && /1\.75%/.test(html), '按售价的项显示百分比');
+  ok(/未填 → 按 0 计/.test(html), '没填的项标「未填 → 按 0 计」，不假装这项不花钱');
+  ok(/小计 {2}A\$22\.50/.test(html), '按件小计 = 6+1.5+3+12 = 22.50',
+    (html.match(/小计[^%]{0,20}/g) || []).join(' | '));
+  ok(/小计 {2}11\.75%/.test(html), '费率小计 = 10+1.75 = 11.75%');
+  ok(/单件履约 {2}A\$57\.75/.test(html), '底部给出单件履约合计');
+
+  const cs = caveats(box);
+  ok(cs.some((c) => /1\/7 项是 0/.test(c)), '口径提醒写明缺了几项', JSON.stringify(cs));
+  ok(cs.some((c) => /退货损耗/.test(c)), '缺项点名「退货损耗」，不是笼统说「有缺项」');
+  ok(cs.some((c) => /高估/.test(c)), '并说明后果：毛利被高估');
+  ok(!cs.some((c) => /经验值/.test(c)), '明细模式下不再出现「行业经验值」估算告警');
+
+  // 6b. 确认过口径 → 不再反复刷告警
+  const e2 = withDom();
+  loadMargin().render(baseData([row], {
+    fulfilMode: 'breakdown', missingItems: ['退货损耗'], breakdownConfirmed: true,
+  }));
+  ok(!caveats(e2['margin-panel']).some((c) => /项是 0/.test(c)),
+    '确认过口径后不再刷缺项告警');
+
+  // 6c. 旧口径（pct 模式）走合计分支，不能出现 7 项
+  const e3 = withDom();
+  loadMargin().render(baseData([baseRow({ fulfilItems: [] })]));
+  const h3 = e3['margin-panel'].innerHTML;
+  ok(/合计口径/.test(h3), '旧口径 tooltip 走合计分支');
+  ok(/费率 {2}30\.00%/.test(h3), '合计口径显示费率 30%');
+  ok(h3.indexOf('头程运费') < 0, '没填明细时不显示 7 项（别让人以为填过了）');
+
+  // 6d. 转义：SKU / 品类 / 明细项名都是飞书里手填的，引号不能打乱标签结构
+  const e4 = withDom();
+  loadMargin().render(baseData([baseRow({
+    sku: 'X"><script>alert(1)</script>',
+    cat: '"><img src=x onerror=alert(1)>',
+    fulfilItems: mkItems(function (i) {
+      return { key: i.key, label: i.label + '"><b>注入', kind: i.kind, unit: i.unit, value: i.value };
+    }),
+    fulfilPct: 11.75, fulfilPerUnit: 22.5,
+  })], { fulfilMode: 'breakdown', missingItems: [], breakdownConfirmed: true }));
+  const h4 = e4['margin-panel'].innerHTML;
+  ok(!/<script/i.test(h4), 'SKU 里的 <script> 被转义，不会进 DOM');
+  ok(!/<img /i.test(h4), '品类里的 <img onerror> 被转义');
+  ok(!/<b>注入/.test(h4), '明细项名里的标签被转义');
+  ok(!/title="[^"]*"[a-z<]/.test(h4), 'title 属性没有被提前闭合');
+}
+
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====\n`);
 process.exit(fail ? 1 : 0);

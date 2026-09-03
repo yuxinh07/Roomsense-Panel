@@ -31,6 +31,49 @@
     if (n === null || n === undefined) return '—';
     return Number(n).toFixed(1) + '%';
   };
+  // 明细项会被拼进 title 属性，必须转义，否则一个引号就把标签结构打乱
+  var esc = function (s) {
+    return String(s === null || s === undefined ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  };
+
+  /**
+   * 把某 SKU 的成本明细拼成鼠标悬停时看的文本。
+   * 表格列已经够多了，塞不下一列一项，用 tooltip 展开，点开就能看见钱花在哪。
+   */
+  function costTip(r) {
+    if (!r) return '';
+    var L = ['采购成本  A$' + fmt(r.unitCostAud === null ? 0 : r.unitCostAud, 2)];
+
+    if (r.fulfilItems && r.fulfilItems.length) {
+      var perUnit = r.fulfilItems.filter(function (i) { return i.kind === 'perUnit'; });
+      var byPct = r.fulfilItems.filter(function (i) { return i.kind === 'pct'; });
+      L.push('');
+      L.push('── 按件（AUD/件）──');
+      perUnit.forEach(function (i) {
+        L.push('  ' + i.label + '  ' + (i.value > 0 ? 'A$' + fmt(i.value, 2) : '未填 → 按 0 计'));
+      });
+      L.push('  小计  A$' + fmt(r.fulfilPerUnit, 2) + '/件');
+      L.push('');
+      L.push('── 按售价（%）──');
+      byPct.forEach(function (i) {
+        L.push('  ' + i.label + '  ' + (i.value > 0 ? fmt(i.value, 2) + '%' : '未填 → 按 0 计'));
+      });
+      L.push('  小计  ' + fmt(r.fulfilPct, 2) + '%');
+    } else {
+      L.push('');
+      L.push('── 履约成本（合计口径）──');
+      L.push('  费率  ' + fmt(r.fulfilPct, 2) + '%');
+      L.push('  按件  A$' + fmt(r.fulfilPerUnit, 2) + '/件');
+    }
+
+    L.push('');
+    L.push('── 合计 ──');
+    L.push('  单件履约  A$' + fmt(r.unitFulfil, 2));
+    L.push('  单件毛利  A$' + fmt(r.unitMargin === null ? 0 : r.unitMargin, 2));
+    return L.join('\n');
+  }
 
   /**
    * 决策：安全垫为主，库存状态为辅。
@@ -89,7 +132,15 @@
 
     // 口径说明 + 待核验标记
     var caveats = [];
-    if (!m.fulfilPctConfirmed) {
+    if (m.fulfilMode === 'breakdown') {
+      // 明细模式：缺项按 0 计 = 毛利被高估，必须点名，不能只说「有缺项」
+      if (!m.breakdownConfirmed && m.missingItems && m.missingItems.length) {
+        caveats.push(
+          '成本明细还有 ' + m.missingItems.length + '/7 项是 0（' + m.missingItems.join('、') + '）。'
+          + '没填的项按 0 计入成本，等于默认它不花钱 —— 毛利被高估，别拿这个数字做决策。'
+        );
+      }
+    } else if (!m.fulfilPctConfirmed) {
       var fee = m.fulfilPerUnit > 0
         ? m.fulfilPct + '% + A$' + m.fulfilPerUnit + '/件'
         : m.fulfilPct + '%';
@@ -111,7 +162,7 @@
     }
 
     html += '<div class="table-wrap"><table class="margin-table"><thead><tr>'
-      + ['SKU', '品类', '销量', '营收', 'ASP', '单件成本', '毛利率', '广告费', 'ACOS', '安全垫', '投流后净利', '决策', '依据']
+      + ['SKU', '品类', '销量', '营收', 'ASP', '采购+履约', '毛利率', '广告费', 'ACOS', '安全垫', '投流后净利', '决策', '依据']
         .map(function (h) { return '<th>' + h + '</th>'; }).join('')
       + '</tr></thead><tbody>';
 
@@ -122,12 +173,18 @@
         : '<b style="color:' + (r.safety < 0 ? '#b91c1c' : r.safety < 5 ? '#92400e' : '#166534') + '">'
           + (r.safety > 0 ? '+' : '') + r.safety.toFixed(1) + '</b>';
       html += '<tr>'
-        + '<td><strong>' + r.sku + '</strong></td>'
-        + '<td>' + (r.cat || '-') + '</td>'
+        // SKU 和品类是飞书里手填的文本，照样要转义：一个引号就能把整行表格打乱
+        + '<td><strong>' + esc(r.sku) + '</strong></td>'
+        + '<td>' + esc(r.cat || '-') + '</td>'
         + '<td>' + fmt(r.qty) + '</td>'
         + '<td>' + money(r.revenue) + '</td>'
         + '<td>' + money(r.asp) + '</td>'
-        + '<td>' + (r.hasCost ? money(r.unitCostAud) : '<span class="muted">待填</span>') + '</td>'
+        + '<td title="' + esc(costTip(r)) + '">'
+          + (r.hasCost
+              ? money(r.unitCostAud)
+                + '<span class="muted"> +' + money(r.unitFulfil) + '</span>'
+              : '<span class="muted">待填</span>')
+        + '</td>'
         + '<td>' + (r.hasCost ? pct(r.marginPct) : '—') + '</td>'
         + '<td>' + (m.adsHasData ? money(r.adsSpend) : '—') + '</td>'
         + '<td>' + pct(r.acos) + '</td>'
