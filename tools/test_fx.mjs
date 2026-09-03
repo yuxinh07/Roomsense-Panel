@@ -27,7 +27,7 @@ const near = (a, b) => Math.abs(a - b) < 0.005;
 /* ---------- 1. 单函数测试 ---------- */
 console.log('\n===== resolveAmounts 单测 =====\n');
 
-const meta = { fx_usd_aud: '1.50', 'fx_usd_aud.W35': '1.60' };
+const meta = { fx_usd_aud: '1.50' };
 
 // 1) USD 商品 + 邮费，行内汇率
 {
@@ -38,21 +38,14 @@ const meta = { fx_usd_aud: '1.50', 'fx_usd_aud.W35': '1.60' };
   ok(a.currency === 'USD' && near(a.fx, 1.5), '  └ currency/fx 正确');
 }
 
-// 2) 按周汇率优先于全局汇率
-{
-  const r = { currency: 'USD', goods: 100, shipping: 0, week_label: 'W35' };
-  const a = resolveAmounts(r, meta);
-  ok(near(a.revenueAud, 160), 'W35 用按周汇率 1.6 → 160（优先于全局 1.5）', JSON.stringify(a));
-}
-
-// 3) 非 W35 用全局汇率
+// 2) USD 没填行内汇率 → 用 meta.fx_usd_aud 兜底
 {
   const r = { currency: 'USD', goods: 100, shipping: 0, week_label: 'W34' };
   const a = resolveAmounts(r, meta);
-  ok(near(a.revenueAud, 150), 'W34 用全局汇率 1.5 → 150', JSON.stringify(a));
+  ok(near(a.revenueAud, 150), 'USD 无行内汇率，用全局 fx_usd_aud=1.5 → 150', JSON.stringify(a));
 }
 
-// 4) 只填销售额 + USD → 整笔折算
+// 3) 只填销售额 + USD → 整笔折算
 {
   const r = { currency: 'USD', revenue: 200, week_label: 'W34' };
   const a = resolveAmounts(r, meta);
@@ -60,27 +53,33 @@ const meta = { fx_usd_aud: '1.50', 'fx_usd_aud.W35': '1.60' };
   ok(a.shipping === 0, '  └ 邮费补 0');
 }
 
-// 5) 历史兼容：只填销售额 + AUD → fx=1，原值不变
+// 4) 历史兼容：只填销售额 + AUD → fx=1，原值不变
 {
   const r = { revenue: 4737, week_label: 'W35' };
   const a = resolveAmounts(r, meta);
   ok(near(a.revenueAud, 4737) && a.fx === 1, '只填销售额+无币种 → fx=1，营收=4737（兼容历史）', JSON.stringify(a));
 }
 
-// 6) 历史兼容：币种显式写 AUD
+// 5) 历史兼容：币种显式写 AUD
 {
   const r = { currency: 'AUD', revenue: 1234.5, week_label: 'W35' };
   const a = resolveAmounts(r, meta);
   ok(near(a.revenueAud, 1234.5), '币种 AUD → 不折算，仍是 1234.5', JSON.stringify(a));
 }
 
-// 7) 缺汇率 → fx=0，营收按 0 计（不静默按 1 折算）
+// 6) USD 缺汇率（行内没填 + meta=0）→ fx=0，营收按 0 计
 {
-  const saveMeta = { ...meta, fx_usd_aud: '0' };
-  delete saveMeta['fx_usd_aud.W35'];
+  const saveMeta = { fx_usd_aud: '0' };
   const r = { currency: 'USD', goods: 100, shipping: 20, week_label: 'W35' };
-  const a = resolveAmounts(r, meta && saveMeta);
+  const a = resolveAmounts(r, saveMeta);
   ok(near(a.revenueAud, 0) && a.fx === 0, 'USD 缺汇率 → fx=0，营收按 0 计（不静默当 1）', JSON.stringify(a));
+}
+
+// 7) 其他币种（EUR/GBP）→ fx=0，营收按 0 计（暂不支持）
+{
+  const r = { currency: 'EUR', goods: 100, shipping: 0, fx_rate: 1.6, week_label: 'W34' };
+  const a = resolveAmounts(r, meta);
+  ok(near(a.revenueAud, 0) && a.fx === 0, 'EUR → fx=0（当前架构只支持 AUD/USD）', JSON.stringify(a));
 }
 
 // 8) 中文列名
@@ -104,6 +103,51 @@ const meta = { fx_usd_aud: '1.50', 'fx_usd_aud.W35': '1.60' };
   const r = { currency: '', goods: '', shipping: '', revenue: '500', week_label: 'W35' };
   const a = resolveAmounts(r, meta);
   ok(near(a.revenueAud, 500), '空字符串列被跳过，落到销售额 500', JSON.stringify(a));
+}
+
+// 12) AUD 行写不写汇率都不被折算
+{
+  const r = { currency: 'AUD', goods: 100, shipping: 0, fx_rate: 99, week_label: 'W34' };
+  const a = resolveAmounts(r, meta);
+  ok(near(a.revenueAud, 100) && a.fx === 1, 'AUD 行 ×99 也不行，fx 强制为 1', JSON.stringify(a));
+}
+
+// 13) 英文列名 + 单价自动 × Qty —— 模拟 Yitta 截图里的 Temu - US 那行
+{
+  const r = {
+    Channel: 'Temu - US',
+    'Transaction ID': 'PO-012-15335115361910658',
+    SKU: 'XFKF-MA-1772-26-KS',
+    Qty: 1,
+    'Unit Price ex.GST': 120,
+    'Postage ex.GST': 0,
+    'Sales Currency': 'USD',
+    'Order Rate to AUD': 1.5483,
+  };
+  const a = resolveAmounts(r, meta);
+  // 120 × 1 = 120 USD，× 1.5483 = 185.796 → 186 AUD
+  ok(near(a.goods, 120) && near(a.shipping, 0), '英文列名解析：单价120 / 邮费单价0', JSON.stringify(a));
+  ok(near(a.revenueAud, 185.796), '  └ 单价×Qty=120 USD × 1.5483 = 185.796 AUD', JSON.stringify(a));
+  ok(a.currency === 'USD' && near(a.fx, 1.5483), '  └ 币种/汇率正确');
+}
+
+// 14) 英文列名 + Qty>1 时邮费也乘数量
+{
+  const r = {
+    Qty: 3, 'Unit Price ex.GST': 50, 'Postage ex.GST': 8,
+    'Sales Currency': 'AUD', 'Order Rate to AUD': 1,
+  };
+  const a = resolveAmounts(r, meta);
+  // (50 + 8) × 3 × 1 = 174 AUD
+  ok(near(a.goods, 150) && near(a.shipping, 24), 'Qty=3 时邮费也乘：商品150 / 邮费24', JSON.stringify(a));
+  ok(near(a.revenueAud, 174), '  └ 营收 = (150+24) × 1 = 174 AUD');
+}
+
+// 15) 旧格式「销售额」+ 无币种 → fx=1（兼容历史）
+{
+  const r = { revenue: 100 };
+  const a = resolveAmounts(r, meta);
+  ok(near(a.revenueAud, 100) && a.fx === 1, '旧格式销售额，无币种 → AUD 100', JSON.stringify(a));
 }
 
 /* ---------- 2. 端到端：建库 → 插混合币种 → 聚合 ---------- */
@@ -142,29 +186,28 @@ function d1Adapter(sqlite) {
 }
 const env = { DB: d1Adapter(db) };
 
-// 汇率：全局 1.50，W34 单独 1.60
+// 汇率：全局 1.50（兜底）—— 实际 Yitta 的数据每行都有行内汇率，这里没行内的 USD 才用兜底
 // 注意：schema 里 week_epoch_date=2026-06-07 / week_epoch_label=23，
 // 所以 2026-08-20/21 落在 W33，2026-08-27/28 落在 W34
 db.prepare(`INSERT OR REPLACE INTO meta(key, value) VALUES('fx_usd_aud','1.50')`).run();
-db.prepare(`INSERT OR REPLACE INTO meta(key, value) VALUES('fx_usd_aud.W34','1.60')`).run();
 
 // 直接调内部函数不方便，走 HTTP-ish 的 import 接口
 const rows = [
   // W33 AUD：商品 900 + 邮费 100 = 1000 AUD（不折算）
   { order_date: '2026-08-20', platform: 'Bunnings', order_no: 'T1', sku: 'S1', category: '床垫', qty: 1, goods: 900, shipping: 100, currency: 'AUD' },
-  // W33 USD：商品 200 + 邮费 50 = 250 USD × 全局 1.5 = 375 AUD
+  // W33 USD（无行内汇率，靠 meta.fx_usd_aud 兜底 1.5）：商品 200 + 邮费 50 = 250 × 1.5 = 375 AUD
   { order_date: '2026-08-21', platform: 'Bunnings', order_no: 'T2', sku: 'S2', category: '床垫', qty: 1, goods: 200, shipping: 50, currency: 'USD' },
-  // W34 USD：商品 500 + 邮费 100 = 600 USD × 按周 1.6 = 960 AUD
-  { order_date: '2026-08-27', platform: 'Amazon', order_no: 'T3', sku: 'S3', category: '枕头', qty: 2, goods: 500, shipping: 100, currency: 'USD' },
-  // W34 EUR：没配 fx_eur_aud → 营收 0（关键：不能套用美元汇率 1.5/1.6）
+  // W34 USD（带行内汇率 1.5483，模拟 Temu - US）：商品 500 + 邮费 100 = 600 × 1.5483 = 928.98 AUD
+  { order_date: '2026-08-27', platform: 'Amazon', order_no: 'T3', sku: 'S3', category: '枕头', qty: 2, goods: 500, shipping: 100, currency: 'USD', fx_rate: 1.5483 },
+  // W34 EUR：当前架构不支持 → 营收 0 + 告警
   { order_date: '2026-08-28', platform: 'Kmart', order_no: 'T4', sku: 'S4', category: '枕头', qty: 1, goods: 300, shipping: 0, currency: 'EUR' },
 ];
 
 // 走 importCsv，喂 CSV 文本 —— 与用户从多维表导出后导入的真实链路一致
 const csv = [
-  '订单日期,平台,订单号,SKU,品类,销量,商品销售额,邮费收入,币种',
+  '订单日期,平台,订单号,SKU,品类,销量,商品销售额,邮费收入,币种,汇率',
   ...rows.map((r) =>
-    [r.order_date, r.platform, r.order_no, r.sku, r.category, r.qty, r.goods, r.shipping, r.currency].join(',')
+    [r.order_date, r.platform, r.order_no, r.sku, r.category, r.qty, r.goods, r.shipping, r.currency, r.fx_rate || ''].join(',')
   ),
 ].join('\n');
 
@@ -174,30 +217,30 @@ ok(imported.ok === true && imported.inserted === 4, '导入 4 行混合币种明
 const dash = await buildDashboard(env);
 
 ok(dash.meta && dash.meta.curWeek === 'W34', '当前周 W34', JSON.stringify(dash.meta?.curWeek));
-ok(near(dash.weeklyData.W33, 1375), 'W33 = 1000(AUD不折算) + 250×1.5(USD) = 1375', `实际 ${dash.weeklyData?.W33}`);
-ok(near(dash.weeklyData.W34, 960), 'W34 = 600×1.6(USD) + 0(EUR缺汇率) = 960', `实际 ${dash.weeklyData?.W34}`);
+ok(near(dash.weeklyData.W33, 1375), 'W33 = 1000(AUD不折算) + 250×1.5(USD兜底) = 1375', `实际 ${dash.weeklyData?.W33}`);
+ok(near(dash.weeklyData.W34, 929), 'W34 = 600×1.5483(USD行内) + 0(EUR不支持) ≈ 929', `实际 ${dash.weeklyData?.W34}`);
 
 const w = dash.warnings || [];
-ok(w.length === 1 && /EUR/.test(w[0]), 'EUR 缺汇率触发 1 条告警', JSON.stringify(w));
+ok(w.length === 1 && /EUR/.test(w[0]), 'EUR 触发 1 条「不支持」告警', JSON.stringify(w));
 
 const fxRates = dash.meta?.fxRates || {};
-ok(fxRates.fx_usd_aud === '1.50' && fxRates['fx_usd_aud.W34'] === '1.60', 'meta.fxRates 回传汇率配置', JSON.stringify(fxRates));
+ok(fxRates.fx_usd_aud === '1.50', 'meta.fxRates 回传 fx_usd_aud', JSON.stringify(fxRates));
 
 // 平台维度也应已折算
 const amazon = (dash.platData || []).find((p) => p.name === 'Amazon');
-ok(amazon && near(amazon.thisWeek, 960), '平台维度 W34 Amazon = 960 AUD', JSON.stringify(amazon));
+ok(amazon && near(amazon.thisWeek, 928.98), '平台维度 W34 Amazon = 928.98 AUD', JSON.stringify(amazon));
 
 // 库里存的应是原币种
 const raw = db.prepare(`SELECT sku, goods, shipping, currency, fx_rate, revenue FROM sales_orders WHERE sku='S3'`).get();
-ok(raw && raw.goods === 500 && raw.shipping === 100 && near(raw.fx_rate, 1.6) && near(raw.revenue, 960),
-  '库里存原币种 500/100 USD，汇率 1.6，折算营收 960', JSON.stringify(raw));
+ok(raw && raw.goods === 500 && raw.shipping === 100 && near(raw.fx_rate, 1.5483) && near(raw.revenue, 928.98),
+  '库里存原币种 500/100 USD，汇率 1.5483（行内），折算营收 928.98', JSON.stringify(raw));
 
-// AUD 行不能被误乘汇率（这是刚修掉的 bug，留用例防回归）
+// AUD 行不能被误乘汇率
 const audRow = db.prepare(`SELECT goods, shipping, currency, fx_rate, revenue FROM sales_orders WHERE sku='S1'`).get();
 ok(audRow && near(audRow.fx_rate, 1) && near(audRow.revenue, 1000),
   'AUD 行 fx=1，营收 = 900+100 = 1000（没被套用 USD 汇率）', JSON.stringify(audRow));
 
-// EUR 行不能套用美元汇率（刚修掉的第二个 bug）
+// EUR 行不能套用美元汇率
 const eurRow = db.prepare(`SELECT goods, currency, fx_rate, revenue FROM sales_orders WHERE sku='S4'`).get();
 ok(eurRow && eurRow.currency === 'EUR' && eurRow.fx_rate === 0 && eurRow.revenue === 0,
   'EUR 行没套用美元汇率，fx=0 营收=0', JSON.stringify(eurRow));
@@ -220,7 +263,9 @@ ok(rBom.ok === true && rBom.inserted === 3, '带 BOM 的 CSV 能导入 3 行', J
 const bomRow = db2.prepare(`SELECT sku, goods, shipping, currency, fx_rate, revenue FROM sales_orders WHERE sku LIKE 'XFKF-PL-1167F-WH'`).get();
 ok(bomRow && bomRow.currency === 'USD' && near(bomRow.goods, 38) && near(bomRow.shipping, 5),
   'USD 行按新列解析正确（38 商品 + 5 邮费）', JSON.stringify(bomRow));
-ok(bomRow && near(bomRow.revenue, 64.5), '  └ 折算营收 = (38+5)×1.5 = 64.5', JSON.stringify(bomRow));
+// 模板里汇率列填了 1.5483 → (38+5) × 1.5483 = 66.5769
+ok(bomRow && near(bomRow.fx_rate, 1.5483) && near(bomRow.revenue, 66.5769),
+  '  └ 折算营收 = (38+5) × 1.5483 = 66.5769（用模板里的行内汇率）', JSON.stringify(bomRow));
 
 const bomAud = db2.prepare(`SELECT goods, shipping, currency, fx_rate, revenue FROM sales_orders WHERE sku LIKE 'XFKF-MA-1772-26-Q'`).get();
 ok(bomAud && near(bomAud.revenue, 459), 'AUD 行 = 419+40 = 459，未折算', JSON.stringify(bomAud));

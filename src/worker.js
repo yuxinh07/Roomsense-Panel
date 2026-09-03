@@ -346,16 +346,28 @@ async function buildDashboard(env) {
     adsJuly: ov['kpi.adsJuly'] ?? null,
   };
 
-  // 数据质量告警：非 AUD 却没配到汇率的行，营收按 0 计，不静默按 1 折算
+  // 数据质量告警
+  //   - USD 行缺汇率：营收按 0 计，需要配 meta.fx_usd_aud 或在行内「汇率」列填值
+  //   - 非 AUD 非 USD：当前架构不支持，营收按 0 计
   const warnings = [];
-  const fxMissing = sales.filter(
-    (r) => r.currency && String(r.currency).toUpperCase() !== 'AUD' && !num(r.fx_rate)
+  const usdMissingFx = sales.filter(
+    (r) => r.currency && String(r.currency).toUpperCase() === 'USD' && !num(r.fx_rate)
   );
-  if (fxMissing.length) {
-    const curs = uniq(fxMissing.map((r) => String(r.currency).toUpperCase())).join(' / ');
+  if (usdMissingFx.length) {
     warnings.push(
-      `有 ${fxMissing.length} 行是 ${curs} 但没配到汇率，这些行的营收按 0 计。` +
-      `请在后台设置 meta.fx_usd_aud（或按周设 fx_usd_aud.W##）后重新导入。`
+      `有 ${usdMissingFx.length} 行是 USD 但没填汇率（也没在后台配 fx_usd_aud），` +
+      `这些行的营收按 0 计。`
+    );
+  }
+  const unsupported = sales.filter((r) => {
+    const c = r.currency && String(r.currency).toUpperCase();
+    return c && c !== 'AUD' && c !== 'USD';
+  });
+  if (unsupported.length) {
+    const curs = uniq(unsupported.map((r) => String(r.currency).toUpperCase())).join(' / ');
+    warnings.push(
+      `有 ${unsupported.length} 行币种是 ${curs}，当前架构只支持 AUD / USD，` +
+      `这些行的营收按 0 计。如有需要请告诉我，我加上对应币种的汇率配置。`
     );
   }
 
@@ -398,19 +410,18 @@ async function insertSales(env, rows) {
      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   const batch = rows.map((r) => {
-    const date = normDate(r.order_date || r.date || r['订单日期'] || '');
-    const week = r.week_label || r.week || (date ? weekOf(date, epochDate, epochWeek) : '');
-    // 周次是算出来的，CSV 里通常没有这一列，必须显式传进去，
-    // 否则按周汇率（fx_usd_aud.W34）永远匹配不上，只会掉到全局汇率
+    // 兼容中英文列名：Yitta 的结算单是英文（Order Date / Channel / Qty / Sales Currency / Order Rate to AUD）
+    const date = normDate(r.order_date || r.date || r['订单日期'] || r['Order Date'] || '');
+    const week = r.week_label || r.week || r['Week Label'] || (date ? weekOf(date, epochDate, epochWeek) : '');
     const amt = resolveAmounts(r, meta, week);
     return stmt.bind(
       date,
       week,
-      r.platform || r['平台'] || '',
-      r.order_no || r['订单号'] || '',
+      r.platform || r['平台'] || r['Channel'] || '',
+      r.order_no || r['订单号'] || r['Transaction ID'] || '',
       r.sku || r['SKU'] || '',
       r.category || r['品类'] || '',
-      num(r.qty ?? r['销量'] ?? 0),
+      num(r.qty ?? r['销量'] ?? r['Qty'] ?? 0),
       amt.goods,
       amt.shipping,
       amt.currency,
@@ -426,17 +437,27 @@ async function insertSales(env, rows) {
 /**
  * 金额解析：把一行明细折算成 AUD 营收
  *
- * 口径（2026-09-03 与 Yitta 确认）：
+ * 口径（2026-09-03 与 Yitta 确认 —— 简化版）：
  *   营收(AUD) = (商品销售额 + 邮费收入) × 汇率
  *
- * 支持三种填法，按优先级：
+ * Yitta 实际只需要支持两种币种：
+ *   - AUD：直接入账，fx=1
+ *   - USD：用汇率折算成 AUD
+ * 其他币种（如 EUR/GBP）当前不支持，营收记 0 并告警
+ *
+ * 汇率优先级（美元）：
+ *   1. 行内「汇率」列（Yitta 的结算单里每行都带 Order Rate to AUD，最准）
+ *   2. 后台 meta.fx_usd_aud（兜底，万一某行漏填）
+ *
+ * 支持三种填法：
  *   1. 填了「商品销售额」和/或「邮费收入」→ 按构成相加再折算
  *   2. 只填「销售额」+ 币种非 AUD            → 整笔按汇率折算
- *   3. 只填「销售额」+ 币种是 AUD 或留空     → 视为 AUD 终值，fx=1（兼容历史数据）
+ *   3. 只填「销售额」+ 币种是 AUD 或留空     → fx=1（兼容历史数据）
  *
- * 汇率优先级：行内「汇率」> 按周 fx_{币种}_aud.W## > 全局 fx_{币种}_aud
- *   AUD → 恒为 1（不查表，避免误套美元汇率）
- *   其他币种取不到汇率时 fx=0，营收按 0 计（不静默按 1 折算，避免数字失真）
+ * 同时认英文列名（Yitta 结算单格式）：Yitta 直接把结算单原样粘进多维表就行
+ *   Channel / Transaction ID / SKU / Qty / Sales Currency
+ *   Unit Price ex.GST（**自动 × Qty**）/ Postage ex.GST（**自动 × Qty**）
+ *   Order Rate to AUD / Order Date / Order Amount inc.GST
  */
 // 导出是为了 tools/test_fx.mjs 能直接单测；Worker 只认 default 导出，多导出无害
 export function resolveAmounts(r, meta, weekOverride) {
@@ -448,35 +469,50 @@ export function resolveAmounts(r, meta, weekOverride) {
     return undefined;
   };
 
-  const cur = String(pick('currency', '币种') || 'AUD').trim().toUpperCase();
+  const cur = String(pick('currency', '币种', 'Sales Currency') || 'AUD').trim().toUpperCase();
 
+  // 三种"总价"来源（直接给到 AUD / 原币种的总价，无需 × Qty）
   const goodsRaw = pick('goods', '商品销售额', '平台销售额');
   const shipRaw = pick('shipping', '邮费收入', '运费收入', '邮费', '运费');
   const revenueRaw = pick('revenue', '销售额', '营收');
-  const fxRaw = pick('fx_rate', '汇率');
+  const fxRaw = pick('fx_rate', '汇率', 'Order Rate to AUD');
+
+  // 两种"单价"来源（Yitta 结算单格式，需 × Qty 才是不含税总价）
+  //   Unit Price ex.GST → 商品单价
+  //   Postage ex.GST    → 邮费单价
+  const unitPriceRaw = pick('Unit Price ex.GST', 'Unit Price', '单价');
+  const unitPostRaw = pick('Postage ex.GST', 'Postage', '邮费单价');
+  const qty = num(pick('qty', '销量', 'Qty') ?? 1);
+
   const week = weekOverride || r.week_label || r.week || r['周次'];
 
-  // 按币种查汇率，key 形如 fx_usd_aud / fx_usd_aud.W35
-  // 注意不能写死 fx_usd_aud：否则 EUR 行会错误套用美元汇率
-  const fxKey = `fx_${(cur || 'AUD').toLowerCase()}_aud`;
-
-  let fx = num(fxRaw ?? 0);
-  if (!fx) {
-    fx =
-      Number(meta[`${fxKey}.${week}`] || 0) ||
-      Number(meta[fxKey] || 0) ||
-      (cur === 'AUD' ? 1 : 0); // AUD 恒为 1；其他币种配不到就是 0
+  // 汇率口径（简化版）：
+  //   AUD → 恒为 1，不管行内填了什么（澳元永不折算）
+  //   USD → 行内「汇率」列（结算单带的 Order Rate to AUD）；缺则用 meta.fx_usd_aud 兜底；都没则营收记 0
+  //   其他币种 → 暂不支持，营收记 0（避免被误套美元汇率）
+  let fx;
+  if (cur === 'AUD') {
+    fx = 1;
+  } else if (cur === 'USD') {
+    fx = num(fxRaw ?? 0) || Number(meta.fx_usd_aud || 0) || 0;
+  } else {
+    fx = 0;
   }
-  if (cur === 'AUD' && !num(fxRaw ?? 0)) fx = 1; // 双保险：AUD 永不折算
 
-  const hasCompose = goodsRaw !== undefined || shipRaw !== undefined;
+  // 计算：单价列自动 × Qty；总价列直接用；都没填则按整笔销售额（AUD 时 fx=1）
   let goods;
   let shipping;
 
-  if (hasCompose) {
+  if (unitPriceRaw !== undefined || unitPostRaw !== undefined) {
+    // Yitta 结算单格式：单价 × 数量
+    goods = unitPriceRaw !== undefined ? num(unitPriceRaw) * qty : 0;
+    shipping = unitPostRaw !== undefined ? num(unitPostRaw) * qty : 0;
+  } else if (goodsRaw !== undefined || shipRaw !== undefined) {
+    // 中文模板：填的就是总价
     goods = num(goodsRaw ?? 0);
     shipping = num(shipRaw ?? 0);
   } else {
+    // 旧格式：只填销售额
     goods = num(revenueRaw ?? 0);
     shipping = 0;
   }
