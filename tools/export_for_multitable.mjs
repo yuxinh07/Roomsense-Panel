@@ -1,0 +1,106 @@
+/**
+ * 把数据库里的现有数据导出成 CSV，用于初始化多维表。
+ * 生成的 CSV 可直接导入飞书多维表格 / Notion / 金山多维表格 / Excel。
+ *
+ * 运行: node --experimental-sqlite tools/export_for_multitable.mjs
+ * 输出: multitable/*.csv
+ */
+import { DatabaseSync } from 'node:sqlite';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+const OUT = path.join(ROOT, 'multitable');
+fs.mkdirSync(OUT, { recursive: true });
+
+const db = new DatabaseSync(':memory:');
+db.exec(fs.readFileSync(path.join(ROOT, 'schema.sql'), 'utf8'));
+db.exec(fs.readFileSync(path.join(ROOT, 'seed.sql'), 'utf8'));
+
+const q = (sql, ...args) => db.prepare(sql).all(...args);
+
+/** 简单 CSV 转义 */
+function csv(headers, rows) {
+  const esc = (v) => {
+    const s = String(v ?? '');
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  };
+  return [headers.join(',')]
+    .concat(rows.map((r) => headers.map((h) => esc(r[h])).join(',')))
+    .join('\n') + '\n';
+}
+
+const files = [];
+
+// ---------- 1. 周销售汇总（现有 13 周，作为历史基线） ----------
+const weekly = q("SELECT key, value FROM overrides WHERE key LIKE 'weekly.%'")
+  .map((r) => ({ 周次: r.key.replace('weekly.', ''), 销售额AUD: Number(r.value) }))
+  .sort((a, b) => Number(a.周次.slice(1)) - Number(b.周次.slice(1)));
+fs.writeFileSync(path.join(OUT, '01_周销售汇总.csv'),
+  csv(['周次', '销售额AUD'], weekly), 'utf8');
+files.push(['01_周销售汇总.csv', weekly.length + ' 行']);
+
+// ---------- 2. SKU 周销量明细 ----------
+const skuWeek = q("SELECT key, value FROM overrides WHERE key LIKE 'skuWeek.%'")
+  .map((r) => {
+    const p = r.key.replace('skuWeek.', '').split('.');
+    return { SKU: p[0], 周次: p[1], 销量: Number(r.value) };
+  })
+  .sort((a, b) => a.SKU.localeCompare(b.SKU) || Number(a.周次.slice(1)) - Number(b.周次.slice(1)));
+fs.writeFileSync(path.join(OUT, '02_SKU周销量.csv'),
+  csv(['SKU', '周次', '销量'], skuWeek), 'utf8');
+files.push(['02_SKU周销量.csv', skuWeek.length + ' 行']);
+
+// ---------- 3. 库存 ----------
+const inv = q(`SELECT i.sku, m.category, i.on_hand, i.inbound, i.safety_stock, i.eta
+               FROM inventory i LEFT JOIN sku_master m ON m.sku = i.sku
+               ORDER BY i.sku`)
+  .map((r) => ({
+    SKU: r.sku, 品类: r.category || '', 现有库存: r.on_hand,
+    在途: r.inbound, 安全库存: r.safety_stock, 预计到货: r.eta || '',
+  }));
+fs.writeFileSync(path.join(OUT, '03_库存.csv'),
+  csv(['SKU', '品类', '现有库存', '在途', '安全库存', '预计到货'], inv), 'utf8');
+files.push(['03_库存.csv', inv.length + ' 行']);
+
+// ---------- 4. SKU 主数据 ----------
+const master = q('SELECT sku, name, category, spec, cost, cost_currency, safety_days FROM sku_master ORDER BY sku')
+  .map((r) => ({
+    SKU: r.sku, 品名: r.name || '', 品类: r.category || '', 规格: r.spec || '',
+    采购价: r.cost, 币种: r.cost_currency, 安全库存天数: r.safety_days,
+  }));
+fs.writeFileSync(path.join(OUT, '04_SKU主数据.csv'),
+  csv(['SKU', '品名', '品类', '规格', '采购价', '币种', '安全库存天数'], master), 'utf8');
+files.push(['04_SKU主数据.csv', master.length + ' 行']);
+
+// ---------- 5. 平台周销售额（W35 / W34） ----------
+const plat = JSON.parse(
+  q("SELECT value FROM overrides WHERE key='platData'")[0]?.value || '[]');
+fs.writeFileSync(path.join(OUT, '05_平台周销售额.csv'),
+  csv(['平台', 'W35销售额', 'W34销售额', '占比'],
+    plat.map((r) => ({ 平台: r.name, W35销售额: r.thisWeek, W34销售额: r.lastWeek, 占比: r.share }))),
+  'utf8');
+files.push(['05_平台周销售额.csv', plat.length + ' 行']);
+
+// ---------- 6. 销售明细（空白模板，每周往这里填） ----------
+const TPL = [
+  ['2026-08-24', 'Bunnings', 'BN-1001', 'XFKF-MA-1772-26-Q', '床垫', 1, 459.00],
+  ['2026-08-25', 'Amazon Marketplace', 'AM-2003', 'XFKF-PL-1167F-WH', '枕头', 2, 43.00],
+];
+fs.writeFileSync(path.join(OUT, '06_销售明细_每周填写.csv'),
+  csv(['订单日期', '平台', '订单号', 'SKU', '品类', '销量', '销售额'],
+    TPL.map((r) => ({
+      订单日期: r[0], 平台: r[1], 订单号: r[2], SKU: r[3], 品类: r[4], 销量: r[5], 销售额: r[6],
+    }))), 'utf8');
+files.push(['06_销售明细_每周填写.csv', '模板 2 行（示例）']);
+
+// ---------- 7. 广告投放（空白模板） ----------
+fs.writeFileSync(path.join(OUT, '07_广告投放.csv'),
+  csv(['周次', '平台', '广告活动', '花费', '广告销售额', '订单数'], [
+    { 周次: 'W35', 平台: 'Amazon', 广告活动: 'XFKF-MA-1666-34 (Auto)', 花费: 40, 广告销售额: 628, 订单数: 4 },
+  ]), 'utf8');
+files.push(['07_广告投放.csv', '模板 1 行']);
+
+console.log('已导出到 multitable/ —— 这些 CSV 可直接导入多维表：\n');
+for (const [f, n] of files) console.log(`  ${f.padEnd(26)} ${n}`);

@@ -1,0 +1,21 @@
+{
+  "name": "roomsense-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "RoomSense 澳洲电商运营看板：Cloudflare Worker + D1 + 静态看板",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:create": "wrangler d1 create roomsense-db",
+    "db:init": "wrangler d1 execute roomsense-db --file=./schema.sql",
+    "db:seed": "wrangler d1 execute roomsense-db --file=./seed.sql",
+    "db:query": "wrangler d1 execute roomsense-db --command=",
+    "secret:token": "wrangler secret put ADMIN_TOKEN",
+    "build:frontend": "python3 tools/build_frontend.py",
+    "build:seed": "python3 tools/build_seed.py"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

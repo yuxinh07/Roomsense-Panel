@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>RoomSense 数据录入 / 人工矫正</title>
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#f3f4f6;color:#111827;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 20px 80px}
+  h1{font-size:22px;margin:0 0 4px}
+  .sub{color:#6b7280;font-size:13px;margin-bottom:20px}
+  .card{background:#fff;border:1px solid #e5e7eb;border-radius:14px;padding:20px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 14px;display:flex;align-items:center;gap:8px}
+  .card h2 .num{width:22px;height:22px;border-radius:6px;background:#4f46e5;color:#fff;
+    font-size:12px;display:flex;align-items:center;justify-content:center}
+  label{font-size:13px;font-weight:600;display:block;margin-bottom:6px;color:#374151}
+  input,select,textarea{width:100%;padding:9px 11px;border:1px solid #d1d5db;border-radius:8px;
+    font-size:13px;font-family:inherit;background:#fff;color:#111827}
+  textarea{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;line-height:1.6;resize:vertical}
+  .row{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .row>div{flex:1;min-width:180px}
+  button{padding:9px 18px;border:0;border-radius:8px;background:#4f46e5;color:#fff;
+    font-size:13px;font-weight:600;cursor:pointer}
+  button:hover{background:#4338ca}
+  button.gray{background:#6b7280}
+  button.gray:hover{background:#4b5563}
+  button.red{background:#dc2626}
+  button.red:hover{background:#b91c1c}
+  button.ghost{background:#fff;color:#374151;border:1px solid #d1d5db}
+  .msg{margin-top:10px;font-size:13px;padding:9px 12px;border-radius:8px;display:none}
+  .msg.ok{display:block;background:#dcfce7;color:#166534}
+  .msg.err{display:block;background:#fee2e2;color:#991b1b}
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  th,td{padding:8px 10px;border-bottom:1px solid #e5e7eb;text-align:left}
+  th{background:#f9fafb;font-weight:600;color:#374151}
+  code{background:#f3f4f6;padding:1px 6px;border-radius:4px;font-size:12px}
+  .hint{font-size:12px;color:#6b7280;line-height:1.7;margin-top:8px}
+  .tabs{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
+  .tab{padding:8px 16px;border-radius:8px;background:#fff;border:1px solid #e5e7eb;
+    cursor:pointer;font-size:13px;font-weight:600;color:#4b5563}
+  .tab.active{background:#4f46e5;color:#fff;border-color:#4f46e5}
+  .panel{display:none}
+  .panel.active{display:block}
+  .tmpl{background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;padding:10px;
+    font-size:12px;font-family:ui-monospace,Menlo,monospace;color:#374151;white-space:pre;overflow-x:auto}
+  a{color:#4f46e5}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>RoomSense 数据录入 / 人工矫正</h1>
+  <div class="sub">改完点保存，看板刷新即可看到最新数据（看板每次打开都会重新拉取）</div>
+
+  <div class="card">
+    <h2><span class="num">0</span>连接设置</h2>
+    <div class="row">
+      <div><label>API 地址</label><input id="base" value="" placeholder="https://roomsense-dashboard.xxx.workers.dev"></div>
+      <div><label>管理令牌 X-Admin-Token</label><input id="token" type="password" placeholder="部署时设置的 ADMIN_TOKEN"></div>
+    </div>
+    <button class="ghost" onclick="saveConn()">保存连接（存本机浏览器）</button>
+    <button class="ghost" onclick="testConn()">测试连接</button>
+    <div class="msg" id="connMsg"></div>
+    <div class="hint">本地开发时 API 地址填 <code>http://localhost:8787</code>。令牌保存在浏览器 localStorage，不会出现在看板页面里。</div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('sales')">① 销售明细导入</div>
+    <div class="tab" onclick="switchTab('stock')">② 库存导入</div>
+    <div class="tab" onclick="switchTab('fix')">③ 人工矫正</div>
+    <div class="tab" onclick="switchTab('sync')">④ 多维表同步</div>
+  </div>
+
+  <!-- ① 销售明细 -->
+  <div class="panel active" id="p-sales">
+    <div class="card">
+      <h2><span class="num">1</span>粘贴 CSV 导入销售明细</h2>
+      <div class="row">
+        <div><label>导入模式</label>
+          <select id="s-mode">
+            <option value="append">追加（保留已有数据）</option>
+            <option value="replace_week">替换本周（先清空所选周次）</option>
+            <option value="replace_all">替换全部（先清空整表）</option>
+          </select>
+        </div>
+        <div><label>目标周次（replace_week 时生效）</label><input id="s-week" placeholder="W35"></div>
+      </div>
+      <label>CSV 内容（首行必须是表头）</label>
+      <textarea id="s-csv" rows="10" placeholder="order_date,platform,order_no,sku,category,qty,revenue"></textarea>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="importSales()">导入</button>
+        <button class="ghost" onclick="fillTemplate('s-csv','sales')">填入模板</button>
+        <button class="ghost" onclick="document.getElementById('s-file').click()">从文件读取</button>
+        <input type="file" id="s-file" accept=".csv,.txt" style="display:none" onchange="readFile(this,'s-csv')">
+        <button class="red" onclick="clearWeek()">清空所选周次</button>
+      </div>
+      <div class="msg" id="s-msg"></div>
+      <div class="hint">
+        从平台后台导出订单后，整理成这 7 列即可（<b>order_date 必填</b>，系统会按你的周次口径自动算 W 编号：2026-06-07 = W23 的第一天，每 7 天递增）。<br>
+        周次字段也可以直接写 <code>week_label</code> 列覆盖自动计算。金额只填数字，不要带 A$ 和逗号。
+      </div>
+      <div class="hint">CSV 模板：</div>
+      <div class="tmpl" id="tmpl-sales"></div>
+    </div>
+  </div>
+
+  <!-- ② 库存 -->
+  <div class="panel" id="p-stock">
+    <div class="card">
+      <h2><span class="num">2</span>库存导入（覆盖式更新）</h2>
+      <label>CSV 内容（首行必须是表头）</label>
+      <textarea id="i-csv" rows="10" placeholder="sku,on_hand,inbound,safety_stock,eta"></textarea>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="importCsv('inventory','i-csv','i-msg')">导入库存</button>
+        <button class="ghost" onclick="fillTemplate('i-csv','inventory')">填入模板</button>
+        <button class="ghost" onclick="document.getElementById('i-file').click()">从文件读取</button>
+        <input type="file" id="i-file" accept=".csv,.txt" style="display:none" onchange="readFile(this,'i-csv')">
+      </div>
+      <div class="msg" id="i-msg"></div>
+      <div class="hint">同一 SKU 重复导入会覆盖。想让看板自动算“可售天数 / 建议补货量”，请先导入销售明细，再到 ③ 里删掉 <code>invData</code> 和 <code>invSuggestData</code> 两个矫正值。</div>
+      <div class="hint">CSV 模板：</div>
+      <div class="tmpl" id="tmpl-inventory"></div>
+    </div>
+    <div class="card">
+      <h2><span class="num">2b</span>SKU 主数据（品类 / 安全库存天数）</h2>
+      <textarea id="k-csv" rows="6" placeholder="sku,name,category,spec,cost,safety_days"></textarea>
+      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+        <button onclick="importCsv('sku','k-csv','k-msg')">导入 SKU 主数据</button>
+        <button class="ghost" onclick="fillTemplate('k-csv','sku')">填入模板</button>
+      </div>
+      <div class="msg" id="k-msg"></div>
+      <div class="hint">模板：</div>
+      <div class="tmpl" id="tmpl-sku"></div>
+    </div>
+  </div>
+
+  <!-- ③ 人工矫正 -->
+  <div class="panel" id="p-fix">
+    <div class="card">
+      <h2><span class="num">3</span>单项矫正（优先级最高，会覆盖自动聚合）</h2>
+      <div class="row">
+        <div><label>矫正项</label>
+          <select id="f-type" onchange="onFixType()">
+            <option value="weekly">周销售额 weekly.W##</option>
+            <option value="skuWeek">SKU 周销量 skuWeek.SKU.W##</option>
+            <option value="kpi">KPI 数值 kpi.xxx</option>
+          </select>
+        </div>
+        <div id="f-extra1-wrap"><label id="f-extra1-label">周次</label><input id="f-extra1" placeholder="W35"></div>
+        <div id="f-extra2-wrap" style="display:none"><label>SKU</label><input id="f-extra2" placeholder="XFKF-PL-1169R-WH"></div>
+        <div><label>数值</label><input id="f-value" placeholder="4737"></div>
+      </div>
+      <button onclick="saveOverride()">保存矫正值</button>
+      <div class="msg" id="f-msg"></div>
+      <div class="hint">
+        例：周次填 <code>W35</code>、数值填 <code>4737</code> → 键名 <code>weekly.W35</code>，看板的 W35 柱子立刻变成 4737。<br>
+        KPI 可选键：<code>kpi.total</code>（累计销售额）、<code>kpi.thisWeek</code>、<code>kpi.netJuly</code>、<code>kpi.adsJuly</code>。
+      </div>
+    </div>
+    <div class="card">
+      <h2><span class="num">3b</span>已保存的矫正值</h2>
+      <button class="ghost" onclick="loadOverrides()">刷新列表</button>
+      <div style="margin-top:12px;overflow-x:auto">
+        <table id="ov-table"><thead><tr><th>键名</th><th>值</th><th>备注</th><th>更新时间</th><th></th></tr></thead><tbody></tbody></table>
+      </div>
+      <div class="hint">删掉某一项 = 该项恢复为按明细自动聚合。比如导入了完整订单明细后，执行
+        <code>DELETE FROM overrides WHERE key LIKE 'weekly.%'</code> 即可让周趋势全自动。</div>
+    </div>
+  </div>
+
+  <!-- ④ 多维表同步 -->
+  <div class="panel" id="p-sync">
+    <div class="card">
+      <h2><span class="num">4</span>从飞书多维表拉取</h2>
+      <button onclick="syncFeishu()">立即同步</button>
+      <div class="msg" id="y-msg"></div>
+      <div class="hint">
+        需要先把 4 个密钥写进 Worker（<b>不要写在任何前端文件里</b>）：<br>
+        <code>npx wrangler secret put FEISHU_APP_ID</code><br>
+        <code>npx wrangler secret put FEISHU_APP_SECRET</code><br>
+        <code>npx wrangler secret put FEISHU_TABLE_TOKEN</code><br>
+        <code>npx wrangler secret put FEISHU_TABLE_ID</code><br>
+        多维表的列名请使用：订单日期 / 平台 / 订单号 / SKU / 品类 / 销量 / 销售额。<br>
+        配置好后，Worker 会按 wrangler.toml 里的 cron 每 30 分钟自动拉一次。
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2><span class="num">↩</span>返回</h2>
+    <a href="./index.html">← 打开运营看板</a>
+  </div>
+</div>
+
+<script>
+const TEMPLATES = {
+  sales: 'order_date,platform,order_no,sku,category,qty,revenue\n' +
+         '2026-08-24,Bunnings,BN-1001,XFKF-MA-1772-26-Q,床垫,1,459.00\n' +
+         '2026-08-25,Amazon Marketplace,AM-2003,XFKF-PL-1167F-WH,枕头,2,86.00',
+  inventory: 'sku,on_hand,inbound,safety_stock,eta\n' +
+             'XFKF-PL-1169R-WH,0,43,30,2026-09-15\n' +
+             'XFKF-MA-1772-26-D,2,20,15,2026-09-10',
+  sku: 'sku,name,category,spec,cost,safety_days\n' +
+       'XFKF-MA-1772-26-Q,1772 记忆棉床垫 Queen,床垫,Queen,680,21\n' +
+       'XFKF-PL-1169R-WH,1169R 枕头 White,枕头,Standard,45,21',
+};
+
+function saveConn(){
+  localStorage.setItem('rs_base', document.getElementById('base').value.trim());
+  localStorage.setItem('rs_token', document.getElementById('token').value.trim());
+  show('connMsg','ok','已保存到本机浏览器');
+}
+function loadConn(){
+  const b = localStorage.getItem('rs_base');
+  document.getElementById('base').value = b || (location.origin === 'null' ? '' : location.origin);
+  document.getElementById('token').value = localStorage.getItem('rs_token') || '';
+}
+function api(path, opts){
+  const base = (document.getElementById('base').value.trim() || '').replace(/\/$/,'');
+  if(!base) throw new Error('请先填写 API 地址');
+  const token = document.getElementById('token').value.trim();
+  return fetch(base + path, Object.assign({
+    headers: Object.assign({'Content-Type':'application/json'},
+      token ? {'X-Admin-Token': token} : {})
+  }, opts||{})).then(async r => {
+    const j = await r.json().catch(()=>({error:'响应不是 JSON'}));
+    if(!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+    return j;
+  });
+}
+function show(id, cls, text){
+  const el = document.getElementById(id);
+  el.className = 'msg ' + cls;
+  el.textContent = text;
+}
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('active'));
+  event.target.classList.add('active');
+  document.getElementById('p-'+name).classList.add('active');
+  if(name==='fix') loadOverrides();
+}
+function fillTemplate(target, key){
+  document.getElementById(target).value = TEMPLATES[key];
+}
+function readFile(input, target){
+  const f = input.files[0];
+  if(!f) return;
+  const r = new FileReader();
+  r.onload = e => { document.getElementById(target).value = e.target.result; };
+  r.readAsText(f, 'UTF-8');
+}
+
+async function testConn(){
+  try{
+    const j = await api('/api/health');
+    show('connMsg','ok','连接正常 · 数据库已绑定: ' + (j.hasDb ? '是' : '否'));
+  }catch(e){ show('connMsg','err', e.message); }
+}
+async function importSales(){
+  const csv = document.getElementById('s-csv').value.trim();
+  if(!csv) return show('s-msg','err','请先粘贴 CSV 内容');
+  try{
+    const j = await api('/api/import', {method:'POST', body: JSON.stringify({
+      type:'sales', csv, hasHeader:true,
+      mode: document.getElementById('s-mode').value,
+      week: document.getElementById('s-week').value.trim()
+    })});
+    show('s-msg','ok','导入成功，写入 ' + (j.inserted ?? 0) + ' 行');
+  }catch(e){ show('s-msg','err', e.message); }
+}
+async function importCsv(type, target, msgId){
+  const csv = document.getElementById(target).value.trim();
+  if(!csv) return show(msgId,'err','请先粘贴 CSV 内容');
+  try{
+    const j = await api('/api/import', {method:'POST', body: JSON.stringify({type, csv, hasHeader:true})});
+    show(msgId,'ok','成功，更新 ' + (j.upserted ?? j.inserted ?? 0) + ' 行');
+  }catch(e){ show(msgId,'err', e.message); }
+}
+async function clearWeek(){
+  const w = document.getElementById('s-week').value.trim();
+  if(!w) return show('s-msg','err','请填写要清空的周次');
+  if(!confirm('确认清空 ' + w + ' 的全部销售明细？')) return;
+  try{
+    const j = await api('/api/sales?week=' + encodeURIComponent(w), {method:'DELETE'});
+    show('s-msg','ok','已删除 ' + (j.deleted ?? 0) + ' 行');
+  }catch(e){ show('s-msg','err', e.message); }
+}
+function onFixType(){
+  const t = document.getElementById('f-type').value;
+  document.getElementById('f-extra2-wrap').style.display = (t === 'skuWeek') ? '' : 'none';
+  document.getElementById('f-extra1-label').textContent = (t === 'kpi') ? 'KPI 键名' : '周次';
+  document.getElementById('f-extra1').placeholder = (t === 'kpi') ? 'kpi.total' : 'W35';
+}
+function buildKey(){
+  const t = document.getElementById('f-type').value;
+  const a = document.getElementById('f-extra1').value.trim();
+  const b = document.getElementById('f-extra2').value.trim();
+  if(t === 'weekly') return 'weekly.' + a.replace(/^W?/i,'W');
+  if(t === 'skuWeek') return 'skuWeek.' + b + '.' + a.replace(/^W?/i,'W');
+  return a;
+}
+async function saveOverride(){
+  const key = buildKey();
+  const val = document.getElementById('f-value').value.trim();
+  if(!key || val === '') return show('f-msg','err','请填写完整');
+  try{
+    await api('/api/overrides', {method:'PUT', body: JSON.stringify({key, value: Number(val), note:'后台人工矫正'})});
+    show('f-msg','ok','已保存：' + key + ' = ' + val);
+    loadOverrides();
+  }catch(e){ show('f-msg','err', e.message); }
+}
+async function loadOverrides(){
+  try{
+    const j = await api('/api/overrides');
+    const tb = document.querySelector('#ov-table tbody');
+    tb.innerHTML = (j.rows||[]).map(r => {
+      const v = String(r.value);
+      const short = v.length > 60 ? v.slice(0,60) + '…' : v;
+      return `<tr><td><code>${r.key}</code></td><td title="${v.replace(/"/g,'&quot;')}">${short}</td>
+        <td>${r.note||''}</td><td>${r.updated_at||''}</td>
+        <td><button class="red" style="padding:4px 10px" onclick="delOverride('${r.key}')">删除</button></td></tr>`;
+    }).join('') || '<tr><td colspan="5">暂无矫正值</td></tr>';
+  }catch(e){ show('f-msg','err', e.message); }
+}
+async function delOverride(key){
+  if(!confirm('删除矫正值 ' + key + '？该项将恢复为按明细自动聚合。')) return;
+  try{
+    await api('/api/overrides?key=' + encodeURIComponent(key), {method:'DELETE'});
+    loadOverrides();
+  }catch(e){ alert(e.message); }
+}
+async function syncFeishu(){
+  try{
+    const j = await api('/api/sync/feishu', {method:'POST'});
+    show('y-msg','ok','同步完成，写入 ' + (j.synced ?? 0) + ' 行');
+  }catch(e){ show('y-msg','err', e.message); }
+}
+
+loadConn();
+for(const k of Object.keys(TEMPLATES)) document.getElementById('tmpl-'+k).textContent = TEMPLATES[k];
+</script>
+</body>
+</html>

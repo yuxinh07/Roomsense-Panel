@@ -1,0 +1,22 @@
+name = "roomsense-dashboard"
+main = "src/worker.js"
+compatibility_date = "2026-08-28"
+
+# 前端静态资源（public/ 下的 index.html / app.js / admin.html）
+[assets]
+directory = "public"
+binding = "ASSETS"
+
+# D1 数据库：binding 名 DB 必须与 src/worker.js 中的 env.DB 一致
+[[d1_databases]]
+binding = "DB"
+database_name = "roomsense-db"
+database_id = "在这里粘贴你的 D1 database_id"
+
+# 可选：每 30 分钟从多维表同步一次（需要先配置飞书 Secrets，否则这段可以删掉）
+[triggers]
+crons = ["*/30 * * * *"]
+
+# 非敏感配置（敏感密钥一律用 wrangler secret put，不要写在这里）
+[vars]
+# ADMIN_TOKEN 建议用 secret 方式：npx wrangler secret put ADMIN_TOKEN

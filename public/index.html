@@ -1,0 +1,1322 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-page-node-id="Q53kG3TNJAoh8EMMc50YMr">
+<head data-page-node-id="GenSmbbJHsqbaCXbP4Fs7w">
+<meta charset="UTF-8" data-page-node-id="Onod1ejEiCYXTKyIlqeuq8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0" data-page-node-id="eptzQOqoh6nCqTCzw5xJD8">
+<title>RoomSense 澳洲电商运营看板</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg-primary: #f5f7fa;
+    --bg-card: #ffffff;
+    --text-primary: #1a1a2e;
+    --text-secondary: #6b7280;
+    --text-accent: #4f46e5;
+    --border-color: #e5e7eb;
+    --red-up: #dc2626;
+    --green-down: #059669;
+    --blue-info: #2563eb;
+    --amber-warn: #d97706;
+    --shadow: 0 1px 3px rgba(0,0,0,0.08), 0 1px 2px rgba(0,0,0,0.04);
+    --shadow-lg: 0 10px 25px rgba(0,0,0,0.08), 0 4px 10px rgba(0,0,0,0.04);
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+  }
+  .dashboard {
+    max-width: 1400px;
+    margin: 0 auto;
+    padding: 24px 20px 60px;
+  }
+
+  /* Header */
+  .header {
+    background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+    border-radius: var(--radius);
+    padding: 32px 36px;
+    color: #fff;
+    margin-bottom: 24px;
+    box-shadow: var(--shadow-lg);
+  }
+  .header h1 { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+  .header .subtitle { font-size: 14px; opacity: 0.85; }
+  .header .meta { display: flex; gap: 24px; margin-top: 16px; flex-wrap: wrap; }
+  .header .meta-item { display: flex; align-items: center; gap: 6px; font-size: 13px; opacity: 0.9; }
+  .header .meta-item span.dot { width: 6px; height: 6px; border-radius: 50%; background: #a5b4fc; }
+
+  /* Section Title */
+  .section-title {
+    font-size: 18px;
+    font-weight: 700;
+    margin: 32px 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-primary);
+  }
+  .section-title::before {
+    content: '';
+    width: 4px;
+    height: 20px;
+    background: var(--text-accent);
+    border-radius: 2px;
+  }
+
+  /* KPI Cards */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 8px;
+  }
+  .kpi-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    transition: box-shadow 0.2s;
+  }
+  .kpi-card:hover { box-shadow: var(--shadow-lg); }
+  .kpi-label { font-size: 13px; color: var(--text-secondary); font-weight: 500; }
+  .kpi-value { font-size: 30px; font-weight: 800; margin-top: 4px; letter-spacing: -0.5px; }
+  .kpi-sub { font-size: 12px; margin-top: 4px; color: var(--text-secondary); }
+  .kpi-trend { font-size: 12px; font-weight: 600; display: inline-block; padding: 2px 8px; border-radius: 4px; }
+  .trend-up { background: #fef2f2; color: var(--red-up); }
+  .trend-down { background: #ecfdf5; color: var(--green-down); }
+
+  /* Highlights */
+  .highlights {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .highlight-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+  }
+  .highlight-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+  .highlight-card.great h3 { color: var(--green-down); }
+  .highlight-card.alert h3 { color: var(--amber-warn); }
+  .highlight-card.danger h3 { color: var(--red-up); }
+  .highlight-card.info h3 { color: var(--blue-info); }
+  .highlight-list { list-style: none; }
+  .highlight-list li {
+    padding: 10px 0;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 14px;
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .highlight-list li:last-child { border-bottom: none; }
+  .icon-badge {
+    width: 24px; height: 24px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; flex-shrink: 0;
+  }
+  .badge-green { background: #ecfdf5; }
+  .badge-amber { background: #fffbeb; }
+  .badge-red { background: #fef2f2; }
+  .badge-blue { background: #eff6ff; }
+
+  /* Charts Grid */
+  .chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .chart-grid.full { grid-template-columns: 1fr; }
+  .chart-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+  }
+  .chart-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  .chart-container { position: relative; height: 300px; }
+  .chart-container.tall { height: 360px; }
+  /* Collapsible detail panel */
+  .collapsible-section { margin-bottom: 16px; }
+  .collapse-toggle {
+    width: 100%;
+    display: flex; align-items: center; gap: 10px;
+    background: #f3f4f6;
+    border: 1px dashed #d1d5db;
+    border-radius: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 600;
+    color: #4b5563;
+    text-align: left;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+  .collapse-toggle:hover { background: #e5e7eb; }
+  .collapse-toggle .caret {
+    display: inline-block;
+    font-size: 11px;
+    color: #6b7280;
+    transition: transform .2s;
+  }
+  .collapse-toggle .hint {
+    margin-left: auto;
+    font-size: 12px;
+    color: #9ca3af;
+    font-weight: 400;
+  }
+  .collapsible-section.open .collapse-toggle {
+    background: #eef2ff;
+    border-color: #c7d2fe;
+    color: #4338ca;
+  }
+  .collapsible-section.open .collapse-toggle .caret { transform: rotate(90deg); }
+  .collapsible-body { margin-top: 12px; }
+  .collapsible-section.open [hidden] { display: block !important; }
+
+  /* Narrow 2-column layout for collapsible detail cards */
+  .chart-grid.narrow {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    margin-bottom: 0;
+  }
+  .chart-grid.narrow .chart-card { padding: 16px; }
+  .chart-grid.narrow .chart-card h3 { font-size: 14px; margin-bottom: 10px; }
+  .chart-grid.narrow .chart-container { height: 240px; }
+  .chart-grid.narrow .chart-container.tall { height: 280px; }
+
+
+  /* Table */
+  .table-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 24px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    margin-bottom: 16px;
+    overflow-x: auto;
+  }
+  .table-card h3 { font-size: 15px; font-weight: 700; margin-bottom: 16px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left;
+    padding: 10px 12px;
+    background: #f9fafb;
+    color: var(--text-secondary);
+    font-weight: 600;
+    border-bottom: 2px solid var(--border-color);
+    white-space: nowrap;
+  }
+  tbody td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #f3f4f6;
+    white-space: nowrap;
+  }
+  tbody tr:hover { background: #f9fafb; }
+  .tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .tag-red { background: #fef2f2; color: #dc2626; }
+  .tag-amber { background: #fffbeb; color: #d97706; }
+  .tag-green { background: #ecfdf5; color: #059669; }
+  .tag-blue { background: #eff6ff; color: #2563eb; }
+
+  /* Strategy Section */
+  .strategy-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 28px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    margin-bottom: 16px;
+  }
+  .strategy-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; display: flex; align-items: center; gap: 10px; }
+  .strategy-card .desc { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
+  .strategy-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .strategy-step {
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 20px;
+    border-left: 3px solid var(--text-accent);
+  }
+  .strategy-step .step-num { font-size: 12px; font-weight: 700; color: var(--text-accent); margin-bottom: 6px; }
+  .strategy-step .step-title { font-size: 14px; font-weight: 600; margin-bottom: 8px; }
+  .strategy-step .step-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+
+  /* Promo Timeline */
+  .promo-timeline {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+  .promo-phase {
+    flex: 1;
+    min-width: 200px;
+    background: #f9fafb;
+    border-radius: 10px;
+    padding: 20px;
+    margin-right: 12px;
+    position: relative;
+    border-top: 4px solid var(--text-accent);
+  }
+  .promo-phase:nth-child(1) { border-top-color: #dc2626; }
+  .promo-phase:nth-child(2) { border-top-color: #d97706; }
+  .promo-phase:nth-child(3) { border-top-color: #2563eb; }
+  .promo-phase:nth-child(4) { border-top-color: #059669; }
+  .promo-phase:nth-child(5) { border-top-color: #7c3aed; }
+  .promo-phase .phase-month { font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+  .promo-phase .phase-name { font-size: 15px; font-weight: 700; margin: 4px 0 10px; }
+  .promo-phase .phase-detail { font-size: 13px; color: var(--text-secondary); line-height: 1.7; }
+  .promo-phase ul { list-style: none; margin-top: 8px; }
+  .promo-phase ul li { font-size: 12px; color: var(--text-secondary); padding: 3px 0; padding-left: 14px; position: relative; }
+  .promo-phase ul li::before { content: '·'; position: absolute; left: 4px; }
+
+  /* Summary */
+  .summary-card {
+    background: linear-gradient(135deg, #1e293b 0%, #334155 100%);
+    border-radius: var(--radius);
+    padding: 28px;
+    color: #fff;
+    margin-bottom: 16px;
+    box-shadow: var(--shadow-lg);
+  }
+  .summary-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 12px; }
+  .summary-card p { font-size: 14px; opacity: 0.9; line-height: 1.8; }
+
+  /* Gantt Chart */
+  .gantt-card {
+    background: var(--bg-card);
+    border-radius: var(--radius);
+    padding: 28px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--border-color);
+    margin-bottom: 16px;
+  }
+  .gantt-card h3 { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .gantt-card .gantt-desc { font-size: 14px; color: var(--text-secondary); margin-bottom: 20px; }
+  .gantt-legend { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
+  .gantt-legend-item { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-secondary); }
+  .gantt-legend-swatch { width: 16px; height: 12px; border-radius: 3px; }
+  .gantt-wrapper { overflow-x: auto; padding-bottom: 12px; }
+  .gantt { position: relative; min-width: 1100px; }
+  .gantt-header { display: flex; border-bottom: 2px solid var(--border-color); padding-bottom: 8px; margin-bottom: 4px; }
+  .gantt-header-cell { flex-shrink: 0; text-align: center; font-size: 12px; font-weight: 700; color: var(--text-secondary); }
+  .gantt-row { display: flex; align-items: center; height: 42px; border-bottom: 1px solid #f3f4f6; position: relative; }
+  .gantt-row:hover { background: #f9fafb; }
+  .gantt-label { flex-shrink: 0; width: 160px; padding: 0 12px; font-size: 13px; font-weight: 600; }
+  .gantt-label .promo-date { font-size: 11px; color: var(--text-secondary); font-weight: 400; }
+  .gantt-track { flex: 1; position: relative; height: 100%; }
+  .gantt-bar { position: absolute; top: 8px; height: 26px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #fff; overflow: hidden; white-space: nowrap; padding: 0 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.12); }
+  .gantt-bar.plan { background: #4f46e5; }
+  .gantt-bar.stock { background: #d97706; }
+  .gantt-bar.ad { background: #2563eb; }
+  .gantt-bar.event { background: #dc2626; }
+  .gantt-bar.today { background: linear-gradient(135deg, #dc2626 0%, #f59e0b 100%); }
+  .gantt-month-grid { position: absolute; top: 0; left: 0; right: 0; bottom: 0; display: flex; pointer-events: none; }
+  .gantt-month-cell { flex: 1; border-right: 1px dashed #e5e7eb; }
+  .gantt-month-cell:last-child { border-right: none; }
+  .gantt-today-line { position: absolute; top: 0; bottom: 0; width: 2px; background: #dc2626; z-index: 10; }
+  .gantt-today-label { position: absolute; top: -20px; left: -20px; font-size: 10px; font-weight: 700; color: #dc2626; background: #fff; padding: 1px 6px; border-radius: 3px; border: 1px solid #dc2626; white-space: nowrap; }
+
+  @media (max-width: 900px) {
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+    .chart-grid { grid-template-columns: 1fr; }
+    .highlights { grid-template-columns: 1fr; }
+    .strategy-steps { grid-template-columns: 1fr; }
+    .promo-timeline { flex-direction: column; }
+  }
+</style>
+
+  <style>
+    .sync-status{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
+    .sync-status.ok{background:#dcfce7;color:#166534}
+    .sync-status.warn{background:#fef3c7;color:#92400e}
+    .admin-entry{position:fixed;right:18px;bottom:18px;z-index:99;display:flex;gap:8px}
+    .admin-entry a{padding:10px 16px;border-radius:10px;background:#4f46e5;color:#fff;
+      text-decoration:none;font-size:13px;font-weight:600;box-shadow:0 6px 18px rgba(79,70,229,.35)}
+    .admin-entry a.gray{background:#374151;box-shadow:0 6px 18px rgba(55,65,81,.3)}
+  </style>
+</head>
+<body data-page-node-id="9MWWL6470YRFLOrtdWzm43">
+<div class="dashboard" data-page-node-id="Jnqi6C4aXvGjHobEFctmsW">
+
+  <!-- Header -->
+  <div class="header" data-page-node-id="NGQhvhK1OBhoAazoWGG8yY">
+    <h1 data-page-node-id="tUGMoX9IDeCBZ7Hm7Akv7a">RoomSense 澳洲电商运营看板</h1>
+    <div class="subtitle" data-page-node-id="WIpcIwvhNcghtROxPNhyHz">供应商结算 · 周销售数据 · 进销存管理 · 广告投放 · 大促企划</div>
+    <div class="meta" data-page-node-id="H1omj8ARzUqLEAoZV5qt75">
+      <div class="meta-item" data-page-node-id="VECadPLRQhm76qRFomYeQQ"><span class="dot" data-page-node-id="LAmNFRGcyvEGTkJEmLtct0"></span> <span id="meta-period">数据周期：2026年6月7日 — 8月28日 (W23-W35)</span></div>
+      <div class="meta-item" data-page-node-id="RrcoC72sBfEWgNKKZtWSgw"><span class="dot" data-page-node-id="1CfDeS4lLx7VoL0IFtM0rj"></span> 平台：Amazon · eBay · Big W · Bunnings · Dropshipzone · Kmart · Kogan · Temu · Myer · Woolworths</div>
+      <div class="meta-item" data-page-node-id="Yf6W1krsjTE8pC27a6p22Y"><span class="dot" data-page-node-id="MbrfOG59voNdPFkBBstE7O"></span><span id="sync-status" class="sync-status">● 正在加载数据…</span> <span id="meta-updated">更新时间：2026-08-28 17:00</span></div>
+    </div>
+  </div>
+
+  <!-- KPI Cards -->
+  <div class="section-title" data-page-node-id="QA4yCXknRRxeA8osoA4VjC">核心指标</div>
+  <div class="kpi-grid" data-page-node-id="Nd9PDWrd05xwuXAKoH29lE">
+    <div class="kpi-card" data-page-node-id="7EKhGNu4SEJF5XOYSCcH5P">
+      <div class="kpi-label" data-page-node-id="FMIAYMAquGtSnH28GWseWK">累计总销售额 (AUD)</div>
+      <div class="kpi-value" id="kpi-total" data-page-node-id="CNA7pCFcEX4vQoZ4hu5gTb">A$37,852.38</div>
+      <div class="kpi-sub" data-page-node-id="RHqmRg843sdjAuDA5UeW8j">W23-W35累计 · 用户确认口径</div>
+    </div>
+    <div class="kpi-card" data-page-node-id="tY4C6UN04tp4Sv8QrUfxoD">
+      <div class="kpi-label" data-page-node-id="XaVrWBQ8bFiF98r7RLmhYR">7月净结算额</div>
+      <div class="kpi-value" id="kpi-net" data-page-node-id="65YKShkpsr5x4svjP3Gg7F">A$13,843</div>
+      <div class="kpi-sub" data-page-node-id="t8MmkCk04emEBmSwA2dlbK">76笔订单 · 月均日销2.5单</div>
+    </div>
+    <div class="kpi-card" data-page-node-id="lmFQJawXeXBxasEEzhgbsf">
+      <div class="kpi-label" data-page-node-id="UHt1oAvQMTLdsAYgj5US3T">本周销售额 (W35)</div>
+      <div class="kpi-value" id="kpi-week" data-page-node-id="u9qTpYokYQFsKOD72uzYRn">A$4,737</div>
+      <div class="kpi-sub" data-page-node-id="55JQAnCq8Tn27wJ5izRGUe">8月22日—28日 · 用户确认总额</div>
+    </div>
+    <div class="kpi-card" data-page-node-id="CaYSMGXcpqipN6kQio0NSp">
+      <div class="kpi-label" data-page-node-id="BAuKuszQ8nj9BeOAuZnJwu">7月广告投入</div>
+      <div class="kpi-value" id="kpi-ads" data-page-node-id="VYt6CBabVeQzsHqW3G6RQ9">A$1,054</div>
+      <div class="kpi-sub" data-page-node-id="tlf5DBplIAdVjyiOf0b2Bk">eBay+Amazon · 占销售额7.6%</div>
+    </div>
+  </div>
+
+  <!-- Highlights -->
+  <div class="section-title" data-page-node-id="8yWjqUUEXdCiodavEdFlYq">本周亮点 & 注意事项</div>
+  <div class="highlights" data-page-node-id="VXK1ODmPLdQb4SeJH9ndhT">
+    <div class="highlight-card great" data-page-node-id="3vWfDprMxAypAhBJFKRjXV">
+      <h3 data-page-node-id="mbPEqkY5kqkl9DPFO4mGCO">本周亮点</h3>
+      <ul class="highlight-list" data-page-node-id="TkPckHsmWQmHlZzQfL38BK">
+        <li data-page-node-id="vk5beHd6QJLfTSxCfgODti">
+          <div class="icon-badge badge-green" data-page-node-id="3bHs3GSVENzffndoehMltd">✓</div>
+          <div data-page-node-id="Vu0T0dZawuxzbRi96ssjIi">本周销售额 <strong data-page-node-id="X9YXzggj371SFnRqJn40ST">A$4,737</strong>，累计总额A$37,852.38（用户确认口径）</div>
+        </li>
+        <li data-page-node-id="gfO7ckiCERr8uRoWENx0VD">
+          <div class="icon-badge badge-green" data-page-node-id="Jg2I2zCxXsDGH08sCLI6lF">✓</div>
+          <div data-page-node-id="2F9W8wvuFHlnADBrNQGqBG">本周SKU明细尚未从有效订单源核验；8.28.xlsx实际是6月—7月历史订单，不是8月22日—28日订单</div>
+        </li>
+        <li data-page-node-id="F03Dd20kr3FeKKp3BEcpHG">
+          <div class="icon-badge badge-green" data-page-node-id="0eF2wCT61iZKSPWtzSabdU">✓</div>
+          <div data-page-node-id="5Zfcue3LZnZWISHmcjo6Df"><strong data-page-node-id="fFrIdzJCdxbK08oq3ne0C4">PL-1169R 本周销量为0</strong>；此前显示的10件来自7月11日—17日历史订单</div>
+        </li>
+        <li data-page-node-id="ZCIImNye3UqufEnwcagpBL">
+          <div class="icon-badge badge-green" data-page-node-id="1ZFcL34HrkPL3EYKxjC7Gg">✓</div>
+          <div data-page-node-id="o2limMlITi7lr11BlgSyUF">W23-W34的SKU周销量已按8.21.xlsx原始订单及Week Label重新核验</div>
+        </li>
+        <li data-page-node-id="3NZWynyiQtVFRrmPrAwxka">
+          <div class="icon-badge badge-green" data-page-node-id="F5kQThPXaBL6tQpYv5Jq30">✓</div>
+          <div data-page-node-id="KuyFlTWkqv3NaDVCS3U9KA">最近完整可核验明细周为W34（截至8月21日），本周平台/SKU明细待正确数据源补充</div>
+        </li>
+      </ul>
+    </div>
+    <div class="highlight-card alert" data-page-node-id="yCgI4o4VwcKcXFfO9IAizB">
+      <h3 data-page-node-id="vOjwV7BgCJ8o7yt33N8Qp6">注意事项</h3>
+      <ul class="highlight-list" data-page-node-id="w0bVEWifKK9NXsvkNDsrgr">
+        <li data-page-node-id="ZjE3H9j7iaLiypAemA0BJW">
+          <div class="icon-badge badge-red" data-page-node-id="SdxjVYpHm4RZOPecPmUtqZ">!</div>
+          <div data-page-node-id="MfBSbgvLOIDfKodcDVWR4H"><strong data-page-node-id="KRKLUdqM2AjG2cN9GCACcC">XFKF-MA-1772-26-D 库存仅剩 2 件</strong>，库存风险仍高，建议优先补货30件</div>
+        </li>
+        <li data-page-node-id="XF3LG8PEE7CUX9ybyAaxtr">
+          <div class="icon-badge badge-red" data-page-node-id="tpsYmigpyG1jbBRANBj7TY">!</div>
+          <div data-page-node-id="sXZiGNC8rnxXDBmtMRpF3H"><strong data-page-node-id="DrbdVw4BBlEHJmyXwC8j67">XFKF-PL-1169R-WH 本周销量为0</strong>，不得把7月11日—17日的10件历史订单计入本周</div>
+        </li>
+        <li data-page-node-id="qZDBKXc5b0hYXLxj8SiUZ1">
+          <div class="icon-badge badge-amber" data-page-node-id="kv7iPqRivKJi3G5Egs4ChV">!</div>
+          <div data-page-node-id="zEo7MVSGdgcTTZFVwxJNEU">8.28.xlsx订单日期采用“日期行+下一行时间”的两行结构，不能按文件名推断订单周次</div>
+        </li>
+        <li data-page-node-id="rD0mbDTD6IKzSwVmMEnZjM">
+          <div class="icon-badge badge-amber" data-page-node-id="90Y4TAA9LsdDn9IKll566M">!</div>
+          <div data-page-node-id="dR363kwxn6j0dD1klbp7x1">Amazon 广告 ACOS 最高达 <strong>50.5%</strong>（XFKF-1666-34-Manual），需优化关键词和竞价策略</div>
+        </li>
+        <li data-page-node-id="lY90K0ykLyzzV3dE3ifnQZ">
+          <div class="icon-badge badge-amber" data-page-node-id="HOiP7A8pW3Ayb9rDBRDQFS">!</div>
+          <div data-page-node-id="MuiQPI3BQUDnSi5myOzAAM">6月仓租为0（有免费额度），7月仓租激增至 A$1,355，库存周转需加快</div>
+        </li>
+        <li data-page-node-id="EpDFiZA0EkfNitHr8tcBmP">
+          <div class="icon-badge badge-blue" data-page-node-id="xJeR8MrCIf5y0g5XMRRdwF">i</div>
+          <div data-page-node-id="3rexMIZLgZDohXUlr2VQCU">本周平台、品类和SKU明细暂不展示未经核验的数据，避免重复计入历史订单</div>
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- Charts Row 1 -->
+  <div class="section-title" data-page-node-id="sZvGiYfKdyYseXiWDc18Vw">周销售统计</div>
+  <div class="chart-grid full">
+<div class="chart-card" data-page-node-id="GXouWueFwj83Rl1JoJxBoH">
+      <h3 data-page-node-id="SkEG5WHqRvuhvLIzoKfPFt">各周销售额统计 (W23-W35)</h3>
+      <div class="chart-container" data-page-node-id="fzf2r5r8VszF2Vo37u0wu1">
+        <canvas id="weeklySalesChart" data-page-node-id="WAeiuUJ5hdJSndbQcwOzuP"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid full">
+<div class="chart-card" data-page-node-id="R4SKUWeeklySalesCard001">
+      <h3 data-page-node-id="R4SKUWeeklySalesTitle001">SKU 周销售统计 (W23-W35)</h3>
+      <div class="chart-container tall" data-page-node-id="R4SKUWeeklySalesContainer001">
+        <canvas id="skuWeeklyChart" data-page-node-id="R4SKUWeeklySalesCanvas001"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="chart-grid full">
+<div class="chart-card" data-page-node-id="PCfHZw0p3U9g8rd0I7rLl3">
+      <h3 data-page-node-id="eMLJ6mg8Q7u4ZuQebkUZE3">各平台周销售占比</h3>
+      <div class="chart-container" data-page-node-id="OHoQlYBpbFznuYX71QsKjZ">
+        <canvas id="channelChart" data-page-node-id="Cb85ecQXPWvgFFchdAApSR"></canvas>
+      </div>
+    </div>
+  </div>
+
+    <!-- Detail Analysis (Collapsible) -->
+  <div class="collapsible-section" id="detailAnalysis">
+    <button class="collapse-toggle" type="button" onclick="toggleCollapse('detailAnalysis')" aria-expanded="false">
+      <span class="caret">▸</span>
+      <span class="label">细节分析（4 个模块）</span>
+      <span class="hint">SKU 累计销量 · 6月vs7月费用结构 · 库存水位状态 · 广告投放效果</span>
+    </button>
+    <div class="collapsible-body" hidden>
+      <div class="chart-grid narrow">
+        <div class="chart-card" data-page-node-id="mrCiyIfROeLQjAqE2wyp4T">
+      <h3 data-page-node-id="D5o7tipQ4G0FRQhDgsyFLE">SKU 累计销量 TOP 10</h3>
+      <div class="chart-container" data-page-node-id="ZhH76EYs1Twh8WMnzdtCPF">
+        <canvas id="skuChart" data-page-node-id="aJrDgVNiCevyrYq8HjWYRU"></canvas>
+      </div>
+    </div>
+        <div class="chart-card" data-page-node-id="G0BuhluMczzCKVYv5KAAkE">
+      <h3 data-page-node-id="9U9MANaEohXOsxDVvHP2Rx">6月 vs 7月 费用结构对比 (AUD)</h3>
+      <div class="chart-container" data-page-node-id="zMgjBIv6yQBBj8aa0gqSCx">
+        <canvas id="costChart" data-page-node-id="sfF0T3UA6Hmvtdv1A6jVwN"></canvas>
+      </div>
+    </div>
+        <div class="chart-card" data-page-node-id="tIJ0cR65HJTCLyZAY8KdTu">
+      <h3 data-page-node-id="VlEoYzRakXTroJVAwLCfMj">库存水位状态</h3>
+      <div class="chart-container" data-page-node-id="r84dzw6hg2cNTkDuiZlxhH">
+        <canvas id="inventoryChart" data-page-node-id="cbS9oAroggFTFRgyag8PzC"></canvas>
+      </div>
+    </div>
+        <div class="chart-card" data-page-node-id="JDRh9l7kFLJg3sf6PpY3XU">
+      <h3 data-page-node-id="QPzqi82dYWhDXoWouxFMat">广告投放效果 (Amazon 各 Campaign)</h3>
+      <div class="chart-container" data-page-node-id="fB8r1VK2Hu3fQHKMmgNoqZ">
+        <canvas id="adChart" data-page-node-id="XWYS63aNeARqE4NSrRzVkn"></canvas>
+      </div>
+    </div>
+      </div>
+    </div>
+  </div>
+
+
+
+  <!-- Product Positioning Matrix -->
+  <div class="section-title">产品定位矩阵 · 黑五投流与清仓决策</div>
+  <div class="table-card">
+    <h3>产品定位矩阵（基于 W23-W35 销售数据）</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th><th>品类</th><th>13周销量</th><th>近4周</th><th>动量</th>
+          <th>动销周</th><th>库存</th><th>在途</th><th>可售天</th>
+          <th>ACOS 自动/手动</th><th>估算销售额</th><th>定位</th><th>黑五决策</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-D</strong></td>
+          <td>床垫</td>
+          <td>18</td>
+          <td>10</td>
+          <td>2.81 ↑</td>
+          <td>9/13</td>
+          <td>2</td>
+          <td>20</td>
+          <td>14</td>
+          <td style="font-size:12px">7.3% / 27.7%</td>
+          <td>A$5,974</td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12px;color:#4b5563">库存告急，先补货再加投；手动广告 ACOS 27.7% 需压预算</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1666-34-Q</strong></td>
+          <td>床垫</td>
+          <td>14</td>
+          <td>6</td>
+          <td>1.69 ↑</td>
+          <td>9/13</td>
+          <td>19</td>
+          <td>34</td>
+          <td>33</td>
+          <td style="font-size:12px">6.4% / 50.5%(已停)</td>
+          <td>A$4,647</td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12px;color:#4b5563">自动广告 ACOS 6.4% 全场最优，加大投流；手动保持暂停</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-K</strong></td>
+          <td>床垫</td>
+          <td>6</td>
+          <td>4</td>
+          <td>4.50 ↑↑</td>
+          <td>4/13</td>
+          <td>18</td>
+          <td>25</td>
+          <td>待核验</td>
+          <td style="font-size:12px">4.6% / 10.4%</td>
+          <td>A$1,991</td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12px;color:#4b5563">动量最强（4.5x），加大投流测试；动销周偏少需先养 Listing</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1167F-WH</strong></td>
+          <td>枕头</td>
+          <td>28</td>
+          <td>11</td>
+          <td>1.46 ↑</td>
+          <td>8/13</td>
+          <td>25</td>
+          <td>53</td>
+          <td>待核验</td>
+          <td style="font-size:12px">9.4% (已停)</td>
+          <td>A$1,204</td>
+          <td><span class="tag" style="background:#dcfce7;color:#166534;font-weight:700">潜力培育</span></td>
+          <td style="font-size:12px;color:#4b5563">枕头线唯一在跑的款，补货到位后重启广告，主推加购</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-Q</strong></td>
+          <td>床垫</td>
+          <td>20</td>
+          <td>5</td>
+          <td>0.75 ↓</td>
+          <td>8/13</td>
+          <td>44</td>
+          <td>64</td>
+          <td>314</td>
+          <td style="font-size:12px">7.3% / 27.7%</td>
+          <td>A$6,638</td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12px;color:#4b5563">销售额第一但动量下滑，可售 314 天严重过剩，黑五去库存</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-D</strong></td>
+          <td>床垫</td>
+          <td>11</td>
+          <td>2</td>
+          <td>0.50 ↓</td>
+          <td>8/13</td>
+          <td>19</td>
+          <td>30</td>
+          <td>待核验</td>
+          <td style="font-size:12px">4.6% / 10.4%</td>
+          <td>A$3,651</td>
+          <td><span class="tag" style="background:#f3f4f6;color:#374151;font-weight:700">维持观察</span></td>
+          <td style="font-size:12px;color:#4b5563">动量下滑但 ACOS 优秀，维持预算，黑五观察转化</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-KS</strong></td>
+          <td>床垫</td>
+          <td>8</td>
+          <td>2</td>
+          <td>0.75 ↓</td>
+          <td>6/13</td>
+          <td>22</td>
+          <td>30</td>
+          <td>157</td>
+          <td style="font-size:12px">7.3% / 27.7%</td>
+          <td>A$2,655</td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12px;color:#4b5563">可售 157 天，减少手动广告预算，黑五捆绑去化</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-S</strong></td>
+          <td>床垫</td>
+          <td>7</td>
+          <td>2</td>
+          <td>0.90 →</td>
+          <td>4/13</td>
+          <td>12</td>
+          <td>20</td>
+          <td>待核验</td>
+          <td style="font-size:12px">7.3% / 27.7%</td>
+          <td>A$2,323</td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12px;color:#4b5563">动销仅 4/13 周，暂停手动广告，仅保留自动</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1168R-WH</strong></td>
+          <td>枕头</td>
+          <td>21</td>
+          <td>4</td>
+          <td>0.53 ↓</td>
+          <td>7/13</td>
+          <td>27</td>
+          <td>48</td>
+          <td>93</td>
+          <td style="font-size:12px">9.4% (已停)</td>
+          <td>A$903</td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12px;color:#4b5563">可售 93 天、动销放缓，暂不重开广告，黑五清一波</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1169R-WH</strong></td>
+          <td>枕头</td>
+          <td>43</td>
+          <td>0</td>
+          <td>0.00 断货</td>
+          <td>7/13</td>
+          <td>0</td>
+          <td>43</td>
+          <td>0</td>
+          <td style="font-size:12px">9.4% (已停)</td>
+          <td>A$1,849</td>
+          <td><span class="tag" style="background:#ede9fe;color:#5b21b6;font-weight:700">断货重启</span></td>
+          <td style="font-size:12px;color:#4b5563">销量冠军断货 5 周，到货后立刻重开广告冲黑五，建议补 150 件</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1666-34-S</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>7</td>
+          <td>10</td>
+          <td>待核验</td>
+          <td style="font-size:12px">6.4% / 50.5%(已停)</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">13周销量未进 TOP10，暂停追加补货，黑五捆绑/Outlet 出清</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1666-34-KS</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>12</td>
+          <td>15</td>
+          <td>待核验</td>
+          <td style="font-size:12px">6.4% / 50.5%(已停)</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">同上，先核验 Listing 是否正常上架与曝光</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1666-34-D</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>7</td>
+          <td>10</td>
+          <td>待核验</td>
+          <td style="font-size:12px">6.4% / 50.5%(已停)</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">同上</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-S</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>11</td>
+          <td>15</td>
+          <td>待核验</td>
+          <td style="font-size:12px">4.6% / 10.4%</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">同上；系列 ACOS 健康，可留一件做黑五凑单品</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-KS</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>13</td>
+          <td>15</td>
+          <td>待核验</td>
+          <td style="font-size:12px">4.6% / 10.4%</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">同上</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-Q</strong></td>
+          <td>床垫</td>
+          <td><6</td>
+          <td>-</td>
+          <td>—</td>
+          <td>未进TOP10</td>
+          <td>32</td>
+          <td>39</td>
+          <td>110</td>
+          <td style="font-size:12px">4.6% / 10.4%</td>
+          <td>—</td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12px;color:#4b5563">压货最重：库存 32 + 在途 39 = 71 件，立即暂停补货并出清</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px;font-size:12px;color:#6b7280;line-height:1.8">
+      <strong>口径说明：</strong>13周销量来自原始订单聚合（W23-W35）；
+      估算销售额 = 累计销量 × W34 可核验周品类均价（床垫 A$332 / 枕头 A$43），<b>为估算值</b>；
+      动量 = 近4周(W32-35)周均 ÷ 前9周(W23-31)周均，&gt;1.2 上升、0.8-1.2 平稳、&lt;0.8 下滑；
+      ACOS 来自 Amazon Campaign（1÷ROAS）；可售天数来自库存 / 日均销，标"待核验"表示销量过低无法测算。<br>
+      <strong>结论速览：</strong>主力加投 3 款（MA-1772-26-D、MA-1666-34-Q、MA-1667-30-K）·
+      潜力培育 1 款（PL-1167F）· 减投去化 5 款 · 断货重启 1 款（PL-1169R）·
+      清仓/停补 6 款（合计库存 82 件 + 在途 104 件）。
+    </div>
+  </div>
+
+  <!-- Black Friday Action Plan -->
+  <div class="section-title">黑五行动计划（按 SKU）</div>
+  <div class="table-card">
+    <h3>黑五行动计划 · 黑五 2026-11-27（今天 T-86）</h3>
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th><th>定位</th>
+          <th>立即动作（9月 · T-86）</th>
+          <th>10月动作（T-55 → T-30）</th>
+          <th>黑五动作（11月 T-30 → T-0）</th>
+          <th>目标</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-D</strong></td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12.5px">立即补 30 件（空运，海运来不及）</td>
+          <td style="font-size:12.5px">10/27 起自动广告预算 +60%</td>
+          <td style="font-size:12.5px">黑五主推款，手动广告 ACOS 压到 20% 以内再加</td>
+          <td style="font-weight:700;color:#4f46e5">黑五周销 25 件+</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1666-34-Q</strong></td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12.5px">确认在途 34 件到仓时间</td>
+          <td style="font-size:12.5px">自动广告预算 +50%，手动保持暂停</td>
+          <td style="font-size:12.5px">黑五主推款，配合 Coupon 拉转化</td>
+          <td style="font-weight:700;color:#4f46e5">黑五周销 20 件+</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-K</strong></td>
+          <td><span class="tag" style="background:#dbeafe;color:#1e40af;font-weight:700">主力加投</span></td>
+          <td style="font-size:12.5px">补 20 件；Listing 补图与 A+ 页面</td>
+          <td style="font-size:12.5px">启动手动精准词，小预算测试</td>
+          <td style="font-size:12.5px">若 ROAS 稳住 8 以上，黑五当周翻倍预算</td>
+          <td style="font-weight:700;color:#4f46e5">黑五周销 12 件+</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1167F-WH</strong></td>
+          <td><span class="tag" style="background:#dcfce7;color:#166534;font-weight:700">潜力培育</span></td>
+          <td style="font-size:12.5px">确认在途 53 件到仓；重启 PL-WH 自动广告</td>
+          <td style="font-size:12.5px">广告预算回到 A$20/天，观察 ACOS</td>
+          <td style="font-size:12.5px">作为床垫加购品做捆绑（床垫+枕头套装）</td>
+          <td style="font-weight:700;color:#4f46e5">黑五周销 15 件+</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-Q</strong></td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12.5px">暂停追加补货（在途 64 件已足够）</td>
+          <td style="font-size:12.5px">广告预算 -30%，手动广告暂停</td>
+          <td style="font-size:12.5px">黑五用「Queen 特价 + 枕頭加购」去库存</td>
+          <td style="font-weight:700;color:#4f46e5">去化 30 件库存</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1667-30-D</strong></td>
+          <td><span class="tag" style="background:#f3f4f6;color:#374151;font-weight:700">维持观察</span></td>
+          <td style="font-size:12.5px">维持现有库存节奏</td>
+          <td style="font-size:12.5px">预算不变，每周复盘 ROAS</td>
+          <td style="font-size:12.5px">黑五维持常态投放，不追量</td>
+          <td style="font-weight:700;color:#4f46e5">稳住周均 1 件</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-KS</strong></td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12.5px">暂停补货（在途 30 件）</td>
+          <td style="font-size:12.5px">手动广告预算 -50%</td>
+          <td style="font-size:12.5px">黑五捆绑出清（KS + 枕頭组合）</td>
+          <td style="font-weight:700;color:#4f46e5">去化 15 件库存</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-MA-1772-26-S</strong></td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12.5px">暂停补货（在途 20 件）</td>
+          <td style="font-size:12.5px">仅保留自动广告，手动全停</td>
+          <td style="font-size:12.5px">黑五不单独投，做凑单赠品</td>
+          <td style="font-weight:700;color:#4f46e5">去化 8 件库存</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1168R-WH</strong></td>
+          <td><span class="tag" style="background:#fef3c7;color:#92400e;font-weight:700">减投去化</span></td>
+          <td style="font-size:12.5px">暂停补货（在途 48 件）</td>
+          <td style="font-size:12.5px">广告保持暂停</td>
+          <td style="font-size:12.5px">黑五清仓价出清，回笼现金</td>
+          <td style="font-weight:700;color:#4f46e5">去化 20 件库存</td>
+        </tr>
+        <tr>
+          <td><strong>XFKF-PL-1169R-WH</strong></td>
+          <td><span class="tag" style="background:#ede9fe;color:#5b21b6;font-weight:700">断货重启</span></td>
+          <td style="font-size:12.5px">补 150 件（海运+空运拆分，先空运 50 件救急）</td>
+          <td style="font-size:12.5px">到货即重启 PL-WH 自动广告，预算 A$30/天</td>
+          <td style="font-size:12.5px">黑五冲枕头线销量王，重养 Listing 权重</td>
+          <td style="font-weight:700;color:#4f46e5">到货后 4 周内销 60 件</td>
+        </tr>
+        <tr>
+          <td><strong>6 个未动销 SKU</strong></td>
+          <td><span class="tag" style="background:#fee2e2;color:#991b1b;font-weight:700">清仓/停补</span></td>
+          <td style="font-size:12.5px">暂停所有追加补货；核验 Listing 上架状态与曝光</td>
+          <td style="font-size:12.5px">不投放广告；做站内 Outlet / 捆绑</td>
+          <td style="font-size:12.5px">黑五清仓专场，定价保本或微亏出清</td>
+          <td style="font-weight:700;color:#4f46e5">出清 82 件库存 + 拦截 104 件在途</td>
+        </tr>
+      </tbody>
+    </table>
+    <div style="margin-top:12px;font-size:12px;color:#6b7280;line-height:1.8">
+      <strong>关键时点：</strong>海运 45-60 天 / 空运 15-20 天 —— 现在下单海运，10 月底到仓是最后窗口；
+      9月28日前（T-60）完成 Listing 与 A+ 页面优化；10月27日（T-30）启动广告预热；
+      11月27-30 日黑五网一爆发。<br>
+      <strong>优先级：</strong>① PL-1169R 补货救急（销量冠军断货 5 周）→
+      ② MA-1772-26-D 补货（库存仅 2 件）→
+      ③ 暂停 6 个未动销 SKU 的追加补货（可拦截在途 104 件）。
+    </div>
+  </div>
+
+  <!-- Inventory Table -->
+  <div class="table-card" data-page-node-id="mKVvKnBe7vRv11Kcz6Keex">
+    <h3 data-page-node-id="HWETQ8255jeKCvCHnWNB47">进销存明细表</h3>
+    <table id="inventoryTable" data-page-node-id="okQNIWb3nbkGo5UuJgHqi5">
+      <thead data-page-node-id="9CJ7Xj7lBXoOgvqIE4MtCG">
+        <tr data-page-node-id="wwYNwMCgrIsQXTdVhk1eO4">
+          <th data-page-node-id="jexWto8OzCyhDHBNJ20u6g">SKU</th>
+          <th data-page-node-id="NhjPPj95UiO4BVSoh6ErNo">类型</th>
+          <th data-page-node-id="Iz6yLk27Kjf0tG56l92C9H">现有库存</th>
+          <th data-page-node-id="YVHkPzM937n6rbQ9xQbnyt">已收总量</th>
+          <th data-page-node-id="qmr7BWByH6TYQsodsIdLNW">7天日均销</th>
+          <th data-page-node-id="T4YhdLjBsfw6EhYG3tDLb7">30天日均销</th>
+          <th data-page-node-id="hpB4d7EOGqd4i71rr2hgnM">预测可售天数</th>
+          <th data-page-node-id="CogsNv1JfJVncJ4PteCUkL">状态</th>
+          <th data-page-node-id="lHHFN2B2HoY5XA7lt9ist4">建议补货</th>
+        </tr>
+      </thead>
+      <tbody id="inventoryBody" data-page-node-id="fsBHfbCB0Kf47uTX2NfWsB"></tbody>
+    </table>
+  </div>
+
+  <!-- Cost Breakdown Table -->
+  <div class="table-card" data-page-node-id="pPl4vf2eNBGrVhQKN57SAP">
+    <h3 data-page-node-id="Y5iY1dn9GQJkCNaIxTjHZv">6月 vs 7月 供应商结算费用明细</h3>
+    <table data-page-node-id="0qH8IbFX67oXyS8PzFLzW3">
+      <thead data-page-node-id="6x2A6kee6GB7qCAJEnSE6F">
+        <tr data-page-node-id="xLzmH9PnrjzF8GxCKDOqCu">
+          <th data-page-node-id="yeK5BBtJSjW1GzlMWKTOUt">费用项目</th>
+          <th data-page-node-id="hTc2Cnv6fsDlHs8WSxUC6M">6月 (AUD)</th>
+          <th data-page-node-id="EnmLyUtibyrChphSUcQCWP">7月 (AUD)</th>
+          <th data-page-node-id="Kw64i0QwwVpu0didr4z4Fr">环比变化</th>
+          <th data-page-node-id="lbvtGRQRjxQ5JQRsXbBBT8">占总销售额比</th>
+        </tr>
+      </thead>
+      <tbody id="costBody" data-page-node-id="f5wWPBGK52iluGZ5Lx3fjg"></tbody>
+    </table>
+  </div>
+
+  <!-- Strategy: Inventory Management -->
+  <div class="section-title" data-page-node-id="oY7YslWDcfV9OvLhZCh4Me">进销存管理方案</div>
+  <div class="strategy-card" data-page-node-id="zBSKPUvKcOkGyCJUCU1eN3">
+    <h3 data-page-node-id="WDtjwUWL0nhOuoAslcMllF">进销存管理体系搭建</h3>
+    <div class="desc" data-page-node-id="kqcuLhEgF0fzgpwymxDtm5">基于现有销售数据和库存水位，建立分层的进销存管理框架，实现从"被动补货"到"主动备货"的转变</div>
+    <div class="strategy-steps" data-page-node-id="YdEMOYuCp43R7CW69gEE8D">
+      <div class="strategy-step" data-page-node-id="DnKx7tWERbQkVJrfZyUvOd">
+        <div class="step-num" data-page-node-id="Ou2IutMZMm9G1LzHTlAlW0">PHASE 1 · 基础搭建</div>
+        <div class="step-title" data-page-node-id="fgM7ae6MS1uFsURRnBm2uB">库存预警机制</div>
+        <div class="step-detail" data-page-node-id="DegtFRuMG4AY1s5tYiUosN">
+          ① 设定安全库存线 = 30天日均销量 × 45天<br data-page-node-id="Di74BlczjuTS7x6JEcPCau">
+          ② 红色预警：可售天数 < 14天<br data-page-node-id="2tDG6jPIERLOO4MRpeBKNE">
+          ③ 黄色预警：可售天数 14-30天<br data-page-node-id="noVxUHjNubC1c8kmDQSGN8">
+          ④ 绿色健康：可售天数 > 30天<br data-page-node-id="vAXIGERLHAzdhxWHXGxcA7">
+          ⑤ 每周一自动生成补货清单
+        </div>
+      </div>
+      <div class="strategy-step" data-page-node-id="2DdJ0HZMUUvurLn7gG0Mes">
+        <div class="step-num" data-page-node-id="k3nkeT7ARcFVaDrEM5C5S7">PHASE 2 · 采购规划</div>
+        <div class="step-title" data-page-node-id="eJF3E8L3d4iO1igIvEn2wG">分品采购策略</div>
+        <div class="step-detail" data-page-node-id="VkgjsQbzofUJKKedueTOab">
+          ① 床垫类（MA系列）：高客单价、低频次，按月采购，备货45-60天<br data-page-node-id="v2qqC1H5bbXsUJ7ZCtFVib">
+          ② 枕头类（PL系列）：低客单价、高频次，按双周采购，备货30-45天<br data-page-node-id="nGoy03fyBn3Wmy0ZmaKZTb">
+          ③ 畅销品 1772-26-D/Q：建议安全库存翻倍<br data-page-node-id="5mIGwsx3p1ZltjaU2iomfd">
+          ④ 新品/滞销品：小批量试单，10件起订<br data-page-node-id="plwAtIocbh0pEuwyqVAUJN">
+          ⑤ 供应商账期管理：月结30天，提前对账
+        </div>
+      </div>
+      <div class="strategy-step" data-page-node-id="dTGcRYt6jvEtE7byWTjCFh">
+        <div class="step-num" data-page-node-id="mfuHE2Ftj7rySUsNC3M2P1">PHASE 3 · 数据驱动</div>
+        <div class="step-title" data-page-node-id="ZA92HXJhUjRfsKW95V9LtX">销售预测模型</div>
+        <div class="step-detail" data-page-node-id="sGFKMrhHXaIRwDHRMOHiAU">
+          ① 建立周维度销售看板（本周已有雏形）<br data-page-node-id="JMKzdCiMC0P2l1tHtRPw5v">
+          ② 计算 SKU 周转率 = 月销售量 / 月均库存<br data-page-node-id="HAQ1tag7ny3qz77SIHawxs">
+          ③ 滞销品定义：30天0销量自动标记<br data-page-node-id="UXi5tUuh2ewdVj1cZeKFwJ">
+          ④ 季节性因子：澳洲夏季(12-2月)床垫需求+20%<br data-page-node-id="gVt8WFWNsoSzWUbF9xX5Hf">
+          ⑤ 大促前60天启动备货，大促后30天清库存
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Strategy: Ad Management -->
+  <div class="strategy-card" data-page-node-id="xJlQTNDLUnyT5l2EBd8rp8">
+    <h3 data-page-node-id="PLUOJ1PdXBF9tj7O4hZ80M">广告投放管理方案</h3>
+    <div class="desc" data-page-node-id="KtsA0WwZgTIEDGG0MMWNSo">当前7月广告总投入 A$1,054，整体ROAS健康，但部分Campaign ACOS过高，需要优化结构</div>
+    <div class="strategy-steps" data-page-node-id="7juk2KjBdZhaH9vZtzW0w5">
+      <div class="strategy-step" data-page-node-id="PS94glQXjwFZW8pyDZS89T">
+        <div class="step-num" data-page-node-id="rFZ5kOQk4lqkjbk2N7ASTM">策略 A · 平台分层</div>
+        <div class="step-title" data-page-node-id="kaddoE9z1vdBue2aUECdam">Amazon 广告优化</div>
+        <div class="step-detail" data-page-node-id="U73VENUxrsG3KFVSwuqG3O">
+          ① 自动广告（ACOS < 10%）：维持现状，持续跑词<br data-page-node-id="Ug2CPNdG0Nj2b4oUur9OJo">
+          ② 手动广告 ACOS > 20% 的暂停关键词，否定高花费低转化词<br data-page-node-id="PgWplOaUroPcj37ZCFzXqd">
+          ③ <strong data-page-node-id="IG2xCDc84Jk5AXUsamHDQw">XFKF-1666-34-Manual ACOS 50.5%</strong> → 暂停或大幅降 CPC 至 A$0.80<br data-page-node-id="vztILrWsvY7VsM4LgSwsft">
+          ④ XFKF-MA-1772-Manual ROAS 3.61（最低）→ 优化 listing 后再放量<br data-page-node-id="Umgb7Nyl0WgGvTHm3N5Lfn">
+          ⑤ 预算分配：床垫类 70%，枕头类 30%<br data-page-node-id="N3pJA0siBN8SwGQrxeBeqS">
+          ⑥ 日预算从 A$10-15 提升至 A$20-25（大促前2个月）
+        </div>
+      </div>
+      <div class="strategy-step" data-page-node-id="ZSOBp89blUByxoGcPaDQkn">
+        <div class="step-num" data-page-node-id="6wFXcORB6W7hzL0I40gPSj">策略 B · 渠道拓展</div>
+        <div class="step-title" data-page-node-id="wWQR4N7H9npWXdR5smULlh">eBay 广告优化</div>
+        <div class="step-detail" data-page-node-id="eR00GiVN3cyI4eRVr0mdWP">
+          ① Promoted Listings ROAS 12.5（健康）→ 维持推广比例 1%<br data-page-node-id="VXoHrRHhByYZFJ1ESxNYKP">
+          ② Smart Campaign 日预算 A$5-15 偏低，大促前提升至 A$25<br data-page-node-id="fRjTk3rzo7qroJEHNO9Uff">
+          ③ XFKF-MA-1772 Smart Campaign ROAS 48.9 → 加大投入<br data-page-node-id="Ep0WG8MXVOOTNOriQ0dkzF">
+          ④ 新增枕头类 Promoted Listing（1169R-WH 已断货，恢复后立即上推）<br data-page-node-id="Zwlsa4HIglUAXs7PnqMM8Y">
+          ⑤ 关键词策略：长尾词"cooling memory foam pillow" + "cervical neck pillow"
+        </div>
+      </div>
+      <div class="strategy-step" data-page-node-id="F5o2BMwoHaHpzZEodt1Va8">
+        <div class="step-num" data-page-node-id="vVmbvQFKkzljwFO2RLuKCH">策略 C · ROI 监控</div>
+        <div class="step-title" data-page-node-id="yR3ruYsxB4nGtPHuXywbTy">广告效果看板</div>
+        <div class="step-detail" data-page-node-id="A4EyHWatvN2S6HtjGiXi7h">
+          ① 每周复盘 ACOS / ROAS / CPC / 转化率<br data-page-node-id="2Wtp4iaZsFrqh4xxYF6jJk">
+          ② 目标 ROAS > 10.0（当前整体约15）<br data-page-node-id="IAjfGHskk7rc5tVjfELrGc">
+          ③ 广告花费占销售额比控制在 8-12%（当前7.6%，大促期可升至15%）<br data-page-node-id="MNN9jGsJ8FPLwbrpHIjJCf">
+          ④ A/B Test：同一 SKU 不同关键词组合<br data-page-node-id="r9KLhwljVBJsYKdNgfL5Jy">
+          ⑤ 退货订单关联广告花费，计算"广告净ROAS"
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Promo Planning -->
+  <div class="section-title" data-page-node-id="1ShJrXurwQzbijC22Bu5cC">澳洲大促企划（提前4个月）</div>
+  <div class="strategy-card" data-page-node-id="q5gERdBY0e0jjtygFhJIKX">
+    <h3 data-page-node-id="wruFJk42ByHBvtFHhMPHwG">2026 黑五 / 网一 大促倒计时</h3>
+    <div class="desc" data-page-node-id="sPRMAX1SylcTQEUEotQw4U">澳洲 Black Friday (11月第4个周五) + Cyber Monday → 需在 <strong data-page-node-id="vbqHx05HDPlBAY5ldSfNvO">7月底</strong> 完成企划启动，当前已是8月底，需立即执行</div>
+    <div class="promo-timeline" data-page-node-id="DMuMm0O2RKtHBF6MbG9cVG">
+      <div class="promo-phase" data-page-node-id="4GUpAYKCdFoNbSFJqDD8Bs">
+        <div class="phase-month" data-page-node-id="eNVDNemtYXPk47kPMO0gx3">T-120天 (8月)</div>
+        <div class="phase-name" data-page-node-id="I7aGmmSVoOWZ9YvmGOiRGx">企划启动</div>
+        <div class="phase-detail" data-page-node-id="EMkc14egPG6zw6fqlOKAEg">目标设定 & 备货启动</div>
+        <ul data-page-node-id="6pFdVkPyRILVuj6pZGflKQ">
+          <li data-page-node-id="dtcWUmdZN25SWElXvZOd2l">设定大促销售目标（建议日常3-5倍）</li>
+          <li data-page-node-id="yv2TpCv0gj8aAp7hl60Lr2">确定主推 SKU：1772-26-D/Q + 1666-34-Q</li>
+          <li data-page-node-id="BJ1HDwYZwY74UCEUo4Rc5l">启动大促备货订单（生产周期约6-8周）</li>
+          <li data-page-node-id="swQIRIvZdycuRI1K99KLTa">库存目标：畅销品备货3个月日常销量</li>
+          <li data-page-node-id="2lmnhZS5Y6C0dFiMDRhZlf">确定促销价格策略（建议8-8.5折）</li>
+        </ul>
+      </div>
+      <div class="promo-phase" data-page-node-id="UUPKfQHNx1KAz0EBIbPtqu">
+        <div class="phase-month" data-page-node-id="yEwcXHhd9AuMFREfLPI9P7">T-90天 (9月)</div>
+        <div class="phase-name" data-page-node-id="mebWVI33ZzgEKxHCG0OQin">Listing 优化</div>
+        <div class="phase-detail" data-page-node-id="2C0w9jyQyp60jvpVH5EGoh">内容 & SEO 准备</div>
+        <ul data-page-node-id="AqBlxC1g8u8k53zW4ZB7EQ">
+          <li data-page-node-id="9BOV1kKObMj2CGSSufYMSo">优化所有 SKU listing 标题、描述、图片</li>
+          <li data-page-node-id="8Him2NjYmnA0IR6t0zJoZP">补充 A+ Content (Amazon Brand Registry)</li>
+          <li data-page-node-id="e3mEXUY38JNVq8Ysc3K9AN">关键词调研，建立大促关键词词库</li>
+          <li data-page-node-id="FIvf0YTHopvB9BY4iHDuR1">eBay listing 升级图片+视频</li>
+          <li data-page-node-id="9Ium3AyCgWMHd5ObpcTYx9">创建 Bundle 组合（床垫+枕头套装）</li>
+        </ul>
+      </div>
+      <div class="promo-phase" data-page-node-id="E5X8VbghY20I5GLo25QU4z">
+        <div class="phase-month" data-page-node-id="SOnpIRkS45sWGna01U22ud">T-60天 (10月)</div>
+        <div class="phase-name" data-page-node-id="39Tg5B3aYHz7Efdmlp68Vt">广告预热</div>
+        <div class="phase-detail" data-page-node-id="lvGLmlOM3Lc5kqoT8CKzoA">流量蓄水池</div>
+        <ul data-page-node-id="PZsJGDGYiVIiHRjDRZhysy">
+          <li data-page-node-id="BgBUKiKOJIAGolppkd6GgG">Amazon 广告日预算提升至 A$30-50</li>
+          <li data-page-node-id="R2GdjoRyHsR5IeTHanD3zO">新增大促关键词 Manual Campaign</li>
+          <li data-page-node-id="IAlUCsnEM3OreVVOlQWv96">启动 Retargeting/Display 广告</li>
+          <li data-page-node-id="oTxV3esEE9xf2F0JJFVkEU">eBay Promoted Listings 全量覆盖</li>
+          <li data-page-node-id="5C5Ate2ofVNF2ljPaeoz34">社媒预热内容发布（Instagram/Facebook）</li>
+        </ul>
+      </div>
+      <div class="promo-phase" data-page-node-id="mhPyY52JWinuWEUULfcFgw">
+        <div class="phase-month" data-page-node-id="4DOS5jb5a17t0tEaU3yDoc">T-30天 (10月底)</div>
+        <div class="phase-name" data-page-node-id="xydDuKsGl6OqwGWCl4rAND">备货到位</div>
+        <div class="phase-detail" data-page-node-id="69BP0VaC1BIale7UJB6MjI">库存 & 物流就绪</div>
+        <ul data-page-node-id="7DVIl7uG4gnnhOXkBDHou4">
+          <li data-page-node-id="G2Fx5OdzESN4fuOX8gyGCa">大促备货全部到仓入库</li>
+          <li data-page-node-id="CPrJvc3WgPCNOOQZLYX5Hu">仓容规划确认（预计需 80-100 CBM）</li>
+          <li data-page-node-id="rGa3WCk1wp19yz3HdBajoi">快递渠道提前锁定运力</li>
+          <li data-page-node-id="tCRcv8cvqvNVKGBPbfeT4W">客服话术准备（退换货政策）</li>
+          <li data-page-node-id="WF6W78l2IBFvx4hrblSAjc">竞品价格监控体系启动</li>
+        </ul>
+      </div>
+      <div class="promo-phase" data-page-node-id="Qj9z7jmR7XaRqpohG9o85x">
+        <div class="phase-month" data-page-node-id="0ImQSvHANdYHfo7GL1GBWS">T-0 (11月)</div>
+        <div class="phase-name" data-page-node-id="e73xXRHtolJUNyZBbmZyz4">大促执行</div>
+        <div class="phase-detail" data-page-node-id="xZA2Ah60UUEFfhCXhQVDFw">Black Friday / Cyber Monday</div>
+        <ul data-page-node-id="tmevwnFjId01xCu7j7hH8F">
+          <li data-page-node-id="VX64NCX8lhz7FECoCm60Hp">BF日：全平台同步降价</li>
+          <li data-page-node-id="HbOx79kFXT6WLI6sg4bdn1">广告预算日常3倍 (A$60-100/天)</li>
+          <li data-page-node-id="sINC02u0NCXOAd0TIKraBJ">实时监控库存，热卖品及时补</li>
+          <li data-page-node-id="gjaB8wN9ca9oYyksNFVIyV">每日复盘销售数据调整策略</li>
+          <li data-page-node-id="O1RWGGCxeMdQV3hWcqCCXx">大促后7天：清仓促销 + 数据总结</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Other Promos -->
+  <div class="strategy-card" data-page-node-id="gy6H4rYPys5s09cWRc6iUv">
+    <h3 data-page-node-id="XtO512bEJple5DKDEPIDoW">澳洲全年大促日历（提前4个月企划节点）</h3>
+    <div class="desc" data-page-node-id="uuHePWZ8m0Q4iHPRAXTXFT">以下为澳洲市场主要电商促销节点，每个节点需提前4个月启动企划流程</div>
+    <table data-page-node-id="H5zpNpUgQmPLxy0iHLG61n">
+      <thead data-page-node-id="KfxNxQscTJx0EMPq8doCD4">
+        <tr data-page-node-id="o0BPDA35Sb5g2zQzAfrDfX">
+          <th data-page-node-id="pu6JQHG1I6nwSCWoI9X8aq">大促节点</th>
+          <th data-page-node-id="PeOXUoBt7EXMIeZ8aBDcM3">时间</th>
+          <th data-page-node-id="J4169tzSEH7XzxXuC0w2VD">企划启动月</th>
+          <th data-page-node-id="EeEDYZyWzU8eT3vYKnfgL0">备货启动月</th>
+          <th data-page-node-id="4RkzWGatnIs9J7kEC1WCfH">广告预热月</th>
+          <th data-page-node-id="6jh2u3DlBwoHj8qY5h8R04">建议备货倍数</th>
+        </tr>
+      </thead>
+      <tbody data-page-node-id="UdzuLImbOqkbDKORcwatGe">
+        <tr data-page-node-id="xqGarLmeSIBYFv6H543v3r">
+          <td data-page-node-id="8MWrMfYZpr0FpSHOarqKcz"><strong data-page-node-id="KVKVBjxn4J47PhUVkescFm">Boxing Day Sale</strong></td>
+          <td data-page-node-id="Gwuv9UrnWX6BOpwuuXfPaA">12月26日</td>
+          <td data-page-node-id="gXIXWjfS80FLlob03Oj4hS">8月底</td>
+          <td data-page-node-id="7WX3D4YE3QIKwVrS9E0hsY">9月</td>
+          <td data-page-node-id="LppSF8egAM7XBEhM9gtfs5">11月</td>
+          <td data-page-node-id="wi72VWiLCcUH8sULRBny22">3-4x</td>
+        </tr>
+        <tr data-page-node-id="NyQQsAYrbnCEwULaGoFFnM">
+          <td data-page-node-id="ooiokfDkNseB3aZsjraF4M"><strong data-page-node-id="MGAfPN9bdAA50xzZBuqEF4"> Australia Day Sale</strong></td>
+          <td data-page-node-id="qCK56kVwPFg5MTBH3T0dKv">1月26日</td>
+          <td data-page-node-id="xQEi3QCAOSdobsmRtRDD5d">9月底</td>
+          <td data-page-node-id="fzDMY9VKYom01X9kVqoLNK">10月</td>
+          <td data-page-node-id="qMtZALNlSiDofJ5JU9WGGK">12月</td>
+          <td data-page-node-id="sp5FTjC6QlG3I0aLOiICK6">2x</td>
+        </tr>
+        <tr data-page-node-id="ASYFFFfM36OuxB6pmwKRYe">
+          <td data-page-node-id="ndw6rnfXD850SBPvyZJWxH"><strong data-page-node-id="ia30Duaqao181FqZ6NrqkI">EOFY Sale (财年末)</strong></td>
+          <td data-page-node-id="mnWakXTwL7sO6RYHW8uGcp">6月底</td>
+          <td data-page-node-id="eJA2XvfEpQQUahIG9MuBSt">2月底</td>
+          <td data-page-node-id="gZ6OAQCd1Kj7KcyT4glSkT">3月</td>
+          <td data-page-node-id="A1s1vQfZGMHt6gqqzt28nJ">5月</td>
+          <td data-page-node-id="VhaXWEBogVPOPCE9mFj1w0">2-3x</td>
+        </tr>
+        <tr data-page-node-id="AhBbhaX96Y9BZMc00BXiQX">
+          <td data-page-node-id="HwaaFfoRtCgkh47yxWVBbO"><strong data-page-node-id="vX0AdQLi1mdCfY1BNIuIZy">Amazon Prime Day</strong></td>
+          <td data-page-node-id="bCw50yO8tUQm8psLPxz4fD">7月中旬</td>
+          <td data-page-node-id="3z8P05kualgZNUxYRa7Ixa">3月</td>
+          <td data-page-node-id="u5kQJAmLIvTCHuvNGZwO3r">4月</td>
+          <td data-page-node-id="ZPjb5EoHAUsyTLuVZ8Gocj">6月</td>
+          <td data-page-node-id="BdGesKCPoxpckRy9dlneg0">3x</td>
+        </tr>
+        <tr data-page-node-id="4zTRfCyD3sF828h7M4X1OJ">
+          <td data-page-node-id="DJbCqcC9xEHAgNlX9oVngs"><strong data-page-node-id="LL2lpUQvAtsV6zwYzE9aDm">Click Frenzy</strong></td>
+          <td data-page-node-id="hubNPmA6bHxK7Bce97R7mz">11月(月中)</td>
+          <td data-page-node-id="UvikhAcvDUhSWD0b0YlCKF">7月</td>
+          <td data-page-node-id="k0quI9EU2SfHX2MGOcKHnM">8月</td>
+          <td data-page-node-id="L9OTrkmilBMOrRlL61Qgmd">10月</td>
+          <td data-page-node-id="SqmJXaEGyCCjBdnwH8reKU">2x</td>
+        </tr>
+        <tr data-page-node-id="tdNPJQlsWiu4gkvCtBxh7j">
+          <td data-page-node-id="ei1dx00hTyLk3ZtUtsQsJJ"><strong data-page-node-id="DkYgdCYXHDG1Jj9HCyCrf8">Black Friday / Cyber Monday</strong></td>
+          <td data-page-node-id="En1FhzhhGzz6NVwz7s7yOY">11月第4周五</td>
+          <td data-page-node-id="dHLWVJvlVDOwb4G8Vjtt6S">7月底</td>
+          <td data-page-node-id="n54cMgTNsiEqHEqUR0Ap0A">8月</td>
+          <td data-page-node-id="W0EgO83etxoiMFNEulOjFC">10月</td>
+          <td data-page-node-id="vQqUEosWwUAbCG9Fy45kaA">4-5x</td>
+        </tr>
+        <tr data-page-node-id="rdx2HJTZyTpiA2DBk1wpNa">
+          <td data-page-node-id="sFlVrIB3etvQYsYIduuSB8"><strong data-page-node-id="N6gAOMNip1MeoVzCisY70H">圣诞促销</strong></td>
+          <td data-page-node-id="c650jF3eqmcphGh5ITNGRj">12月全月</td>
+          <td data-page-node-id="kjgRsG0wBYTGdxOeb1kLmd">8月</td>
+          <td data-page-node-id="I6pZhc5KF2Z4yxiCz7s9t8">9月</td>
+          <td data-page-node-id="qc3IerxB8yO0913thaMVwh">11月</td>
+          <td data-page-node-id="5CEgqYlCtGN2QTKFbSkqEk">3-4x</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Deep Analysis: 8.28 Week Report -->
+  <div class="section-title">最新可核验数据分析（W34）</div>
+
+  <!-- Analysis 1: Mattress vs Pillow -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>床垫 vs 枕头 本周销售对比</h3>
+      <div class="chart-container">
+        <canvas id="categoryChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>床垫 vs 枕头 累计销量趋势</h3>
+      <div class="chart-container">
+        <canvas id="categoryTrendChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="strategy-card" style="margin-bottom:16px;">
+    <h3>1. 品类销售分析：床垫 vs 枕头</h3>
+    <div class="desc">最近完整可核验周：W34（截至8月21日）；W35品类明细待有效订单源补充</div>
+    <table>
+      <thead>
+        <tr>
+          <th>品类</th>
+          <th>W34订单数</th>
+          <th>W34销量(件)</th>
+          <th>W34销售额(AUD)</th>
+          <th>销售额占比</th>
+          <th>件均价</th>
+          <th>累计销量(件)</th>
+        </tr>
+      </thead>
+      <tbody id="categoryTableBody"></tbody>
+    </table>
+    <div style="margin-top:16px; padding:16px; background:#f9fafb; border-radius:8px; font-size:14px; line-height:1.8;">
+      <strong>关键发现：</strong><br>
+      &bull; <strong>W34床垫类</strong>贡献 A$3,651（97.7%），10笔订单、11件，是最近完整可核验周的绝对营收主力。<br>
+      &bull; <strong>W34枕头类</strong>仅PL-1168R售出2件、A$86；PL-1169R从W31开始已连续无销量。<br>
+      &bull; <strong>W35说明</strong>：目前只确认PL-1169R销量为0；其他SKU、品类及平台明细没有有效订单源，暂不展示推算值。
+    </div>
+  </div>
+
+  <!-- Analysis 2: Platform WoW -->
+  <div class="chart-grid">
+    <div class="chart-card">
+      <h3>各平台 W35 vs W34 销售额环比（截图口径）</h3>
+      <div class="chart-container">
+        <canvas id="platformWoWChart"></canvas>
+      </div>
+    </div>
+    <div class="chart-card">
+      <h3>各平台 W35 销售额占比（合计A$4,098.71）</h3>
+      <div class="chart-container">
+        <canvas id="platformPieChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <div class="strategy-card" style="margin-bottom:16px;">
+    <h3>2. 平台销售数据 & 环比分析</h3>
+    <div class="desc">以用户截图为准：第二列为W35、第一列为W34；截图口径W35合计A$4,098.71，W34合计A$3,837.16</div>
+    <table>
+      <thead>
+        <tr>
+          <th>平台</th>
+          <th>W35销售额</th>
+          <th>W34销售额</th>
+          <th>环比变化</th>
+          <th>环比%</th>
+          <th>W35占比</th>
+        </tr>
+      </thead>
+      <tbody id="platformTableBody"></tbody>
+    </table>
+    <div style="margin-top:16px; padding:16px; background:#f9fafb; border-radius:8px; font-size:14px; line-height:1.8;">
+      <strong>关键发现：</strong><br>
+      &bull; <strong>W35截图口径合计A$4,098.71</strong>，较W34的A$3,837.16增长6.8%；该合计与KPI本周总额A$4,737口径不同。<br>
+      &bull; <strong>Bunnings</strong>从W34的0增至A$1,515.65，占W35平台金额37%，成为第一渠道。<br>
+      &bull; <strong>Dropshipzone</strong>A$1,257.22，占31%，环比增长10.4%；<strong>Kmart</strong>A$515.74，占13%，环比增长1811.6%。<br>
+      &bull; <strong>Amazon Marketplace</strong>从A$1,563.02降至A$503.79，环比下降67.8%；Big W、Temu-US、Woolworths降至0。
+    </div>
+  </div>
+
+  <!-- Analysis 3: Inventory Status -->
+  <div class="strategy-card" style="margin-bottom:16px;">
+    <h3>3. 目前库存情况及补货建议</h3>
+    <div class="desc">W35仅确认PL-1169R销量为0；其余SKU本周销量待有效订单源核验，库存状态按现有库存判断</div>
+    <table>
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>品类</th>
+          <th>现有库存</th>
+          <th>本周销量</th>
+          <th>近7天日均</th>
+          <th>可售天数</th>
+          <th>状态</th>
+          <th>建议补货量</th>
+          <th>优先级</th>
+        </tr>
+      </thead>
+      <tbody id="invSuggestBody"></tbody>
+    </table>
+    <div style="margin-top:16px; padding:16px; background:#fef2f2; border-radius:8px; font-size:14px; line-height:1.8; border:1px solid #fecaca;">
+      <strong style="color:#dc2626;">紧急补货清单（72小时内下单）：</strong><br>
+      &bull; <strong>XFKF-PL-1169R-WH</strong>：现有库存记录为0，本周销量确认0件；从W31开始连续无销量，建议尽快核对实际到货和可售库存<br>
+      &bull; <strong>XFKF-MA-1772-26-D</strong>：现有库存2件，库存风险高；本周销量待有效订单源核验，建议优先补货30件<br>
+      &bull; <strong>XFKF-MA-1666-34-D / S</strong>：现有库存各7件，库存量偏低，建议结合有效W35销量再决定补货量<br>
+      <br>
+      <strong style="color:#d97706;">数据说明：</strong><br>
+      &bull; 8.28.xlsx的真实订单日期为6月6日—7月16日，不能作为8月22日—28日的本周销量<br>
+      &bull; 除PL-1169R=0外，其余SKU的W35销量、近7天日均和可售天数暂显示“待核验”
+    </div>
+  </div>
+
+  <!-- Gantt Chart: AU/NZ Promo Planning -->
+  <div class="section-title" data-page-node-id="GanttSectionTitle001">澳新大促企划甘特图</div>
+  <div class="gantt-card" data-page-node-id="GanttCardContainer001">
+    <h3 data-page-node-id="GanttCardTitle001">澳新全年大促 · 提前4个月企划备货时间轴</h3>
+    <div class="gantt-desc" data-page-node-id="GanttCardDesc001">每个大促节点遵循「企划启动 → 备货启动 → 广告预热 → 大促执行」四阶段，总跨度约4个月。红色竖线为当前时间。</div>
+    <div class="gantt-legend" data-page-node-id="GanttLegend001">
+      <div class="gantt-legend-item" data-page-node-id="GanttLegendItem01"><span class="gantt-legend-swatch" style="background:#4f46e5" data-page-node-id="GanttSwatch01"></span> 企划启动</div>
+      <div class="gantt-legend-item" data-page-node-id="GanttLegendItem02"><span class="gantt-legend-swatch" style="background:#d97706" data-page-node-id="GanttSwatch02"></span> 备货启动</div>
+      <div class="gantt-legend-item" data-page-node-id="GanttLegendItem03"><span class="gantt-legend-swatch" style="background:#2563eb" data-page-node-id="GanttSwatch03"></span> 广告预热</div>
+      <div class="gantt-legend-item" data-page-node-id="GanttLegendItem04"><span class="gantt-legend-swatch" style="background:#dc2626" data-page-node-id="GanttSwatch04"></span> 大促执行</div>
+    </div>
+    <div class="gantt-wrapper" data-page-node-id="GanttWrapper001">
+      <div class="gantt" id="ganttChart" data-page-node-id="GanttChartDiv001"></div>
+    </div>
+  </div>
+
+  <!-- Summary -->
+  <div class="summary-card" data-page-node-id="uA8EPVnNAx6vA3NJOL7HDu">
+    <h3 data-page-node-id="UvyI3qcNGkrYwTPWpDl085">总结与行动项</h3>
+    <p data-page-node-id="M7z2yphaRwdH3KF8wEfDfJ">
+      <strong data-page-node-id="44s56B1Lya9buot0gyhFRU">当前状态：</strong>业务处于快速增长期，7月销售额较6月增长312%，渠道已拓展至12个平台，广告ROAS整体健康。<br data-page-node-id="C3xZ6fchaHT1c3dnK2UVZB">
+      <strong data-page-node-id="fIy2iVXeSIUF3fVJWYP9Xj">紧急行动：</strong>XFKF-MA-1772-26-D 和 XFKF-PL-1169R-WH 两款已断货/即将断货，需立即下补货单。XFKF-1666-34-Manual 广告 ACOS 50.5% 需暂停优化。<br data-page-node-id="gPkBoN4kT3AXfuTA8uv43R">
+      <strong data-page-node-id="UPnDfMQnlLbzFtWGlHjpFo">中期规划：</strong>搭建进销存预警系统，按品类制定采购周期；广告预算分阶段提升；listing 内容优化为Q4大促蓄力。<br data-page-node-id="WRAjyFiQEwoHIkJX3e5Mge">
+      <strong data-page-node-id="haZHy5kadGxQ4A0WmEmLlO">大促节奏：</strong>Black Friday/Cyber Monday 为年度最大促销窗口，按 T-120→T-90→T-60→T-30→T-0 五阶段推进，当前已处于 T-90，需立即启动 Listing 优化和广告词库搭建。
+    </p>
+  </div>
+
+</div>
+<script src="./data.fallback.js"></script>
+<script src="./app.js"></script>
+<div class="admin-entry"><a href="./admin.html">数据录入 / 矫正</a></div>
+</body>
+</html>

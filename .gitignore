@@ -1,0 +1,14 @@
+# 依赖
+node_modules/
+
+# Wrangler 本地状态与密钥（.dev.vars 里可能有真实密钥，绝不能提交）
+.wrangler/
+.dev.vars
+.dev.vars.*
+
+# 飞书凭证（真实值，绝不提交）
+tools/.env.feishu
+
+# 系统/日志
+.DS_Store
+*.log
