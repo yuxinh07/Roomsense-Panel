@@ -275,19 +275,35 @@ npm run test:fx # 多币种专项：USD/EUR 折算、邮费相加、按周汇率
 `tools/setup_feishu.sh` **不含任何密钥**（改成从环境变量读），可以安全提交。
 真实值放 `tools/.env.feishu`（复制 `.env.feishu.example` 而来），已在 gitignore 里。
 
-> ⚠️ **`seed.sql` 里有真实经营数据**（各周销售额、库存、采购价）。
-> 推 GitHub 请务必建 **私有仓库**。
+### ⚠️ 关于真实数据
+
+仓库里有真实经营数据：**`seed.sql`**（各周销售额、库存、采购价）、
+**`tools/fixtures/*.json`**（从飞书导出的 63 行真实订单）、**`multitable/*.csv`**（SKU 与库存）。
+
+本仓库是**公开**的，即这些数据全网可见。这是明确的选择，不是疏忽 ——
+因为不含任何密钥（已扫描确认：无 GitHub token / SSH 私钥 / PEM / AWS key），
+飞书 table token 单独拿不到数据（还需要应用凭证 + 协作者授权）。
+
+**但请注意：公开仓库里的数据撤不回来。** 就算以后把仓库改成私有、删掉这些文件，
+Git 历史里仍然留着完整记录，任何人都能翻出来。
+
+如果以后想收回：
+
+| 做法 | 效果 |
+|---|---|
+| 把仓库改成 Private | 只挡住**以后**的新访问者，历史仍在，被 fork / 被爬走的副本拿不回来 |
+| 用 `git filter-repo` 重写历史 | 能真正抹掉，但要强推 `--force`，且本地所有克隆都要重拉 |
+| 删库重建为 Private | 最干净。代码是次要的，**历史提交记录才是要保的东西** —— 想清楚再动 |
 
 ### 首次推送
 
-本地仓库已经初始化并提交好了，你在 GitHub 建一个**空的私有仓库**，然后：
-
 ```bash
-cd roomsense-cloud
-git remote add origin git@github.com:<你的用户名>/<仓库名>.git
-git branch -M main
-git push -u origin main
+bash tools/push_github.sh --status   # 先体检：认证通不通、仓库在不在、有没有密钥泄漏
+bash tools/push_github.sh            # 体检过了再真推
 ```
+
+脚本会自己检查 SSH 认证、探测仓库、扫描敏感文件，最后要你输 `yes` 才推。
+不想配 SSH 也可以用令牌：`GITHUB_TOKEN=ghp_xxx bash tools/push_github.sh`
 
 ### 关于自动部署
 
