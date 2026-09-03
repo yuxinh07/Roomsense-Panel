@@ -16,6 +16,24 @@
  * 密钥全部来自 Worker 环境变量 / Secrets，前端页面永远拿不到。
  */
 
+/**
+ * 周次锚点：W23 的第一天是 2026-05-30（周六）。
+ * 口径来源：seed.sql 里 overrides('weekly.W35') 的备注「8/22-8/28 用户确认总额」。
+ * 反推：W35 需覆盖 8/22，则 W23 = 8/22 - (35-23)*7 = 2026-05-30。
+ * 也就是说一周 = 周六 00:00 ~ 下周五 23:59（不是常见的周日/周一起始，按 Yitta 平台口径来）。
+ * 改这里之前务必确认周起始日 —— 锚点错一天，整张看板的周次全部错位。
+ */
+const WEEK_EPOCH_DATE = '2026-05-30';
+const WEEK_EPOCH_LABEL = 23;
+
+/**
+ * 毛利参数的兜底值。全部标「待核验」：
+ * fulfil_pct 是行业经验值，不是 RoomSense 的真实费率 —— 一旦 Yitta 提供真实数字，
+ * 必须写进 meta 覆盖掉，并在前端告警条里持续显形，避免拿估算值当真账用。
+ */
+const DEFAULT_FULFIL_PCT = 30;   // 佣金 + 履约（仓租/入出库/快递）合计占售价的百分比
+const DEFAULT_ADS_ALLOC = 'by_revenue'; // 广告费分摊方式：按营收占比分摊到 SKU
+
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -143,14 +161,188 @@ async function handleApi(request, env, url) {
 }
 
 /* ============================================================
+ * 周次 → 日期
+ * ========================================================== */
+function weekStart(weekLabel, epochDate, epochWeek) {
+  const n = Number(String(weekLabel).replace(/\D/g, ''));
+  if (!Number.isFinite(n)) return '';
+  const e = new Date(`${epochDate}T00:00:00Z`).getTime();
+  if (!Number.isFinite(e)) return '';
+  return new Date(e + (n - epochWeek) * 7 * 86400000).toISOString().slice(0, 10);
+}
+
+/* ============================================================
+ * SKU 级毛利（按自然月）
+ * ------------------------------------------------------------
+ * 为什么按自然月、不按周次：
+ *   Yitta 问的是「8月毛利」。8/1–8/31 和 W31–W35 不是同一段时间
+ *   （W31 从 7/25 起、W35 到 8/28 止），按周次取会把 7 月底算进来、8 月末漏掉。
+ *   所以这里直接用 order_date 的前 7 位切月，不碰周次。
+ *
+ * 单位经济模型（每件，AUD，ex.GST）：
+ *   ASP       = 该月营收 / 该月销量（营收已含邮费收入、已折成 AUD）
+ *   采购成本  = sku_master.cost ÷ fx_aud_cny（RMB 计价时；AUD 计价直接用）
+ *   佣金+履约 = ASP × fulfil_pct
+ *   单件毛利  = ASP − 采购成本 − 佣金+履约
+ *   毛利率    = 单件毛利 / ASP
+ *
+ * 投流判据（Yitta 真正要的答案）：
+ *     安全垫 = 毛利率 − ACOS
+ *   安全垫 > 0 → 投流在边际上赚钱，越大越该加投。
+ *   注意 ACOS 低 ≠ 赚钱：毛利率 15% 的产品 ACOS 10% 只剩 5%，
+ *   不如毛利率 40% 的产品 ACOS 20%（剩 20%）。只看 ACOS 会得出相反结论。
+ *
+ * 数据缺失的处理原则：宁可显示「待填」，不用估算值冒充真实账。
+ *   采购成本没填 → hasCost=false，unitMargin / marginPct / safety 全部为 null
+ *   fulfil_pct 未核实 → 照算，但在 warnings 里持续告警
+ *   广告表没数据 → adsSpend=0、acos=null（null 表示「无数据」，不是「零花费」）
+ * ========================================================== */
+export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
+  const month = opts.month || meta.margin_month || '2026-08';
+  const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
+  const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
+  const fxAudCny = Number(meta.fx_aud_cny || 0);
+  const globalFulfil = Number(meta.fulfil_pct ?? DEFAULT_FULFIL_PCT);
+  const confirmed = String(meta.fulfil_pct_confirmed || '0') === '1';
+  const master = indexBy(skuMaster, 'sku');
+
+  // ---- 1. 该月每 SKU 的营收 / 销量 ----
+  const agg = {};
+  for (const r of sales) {
+    if (!r.sku || !r.order_date) continue;
+    if (String(r.order_date).slice(0, 7) !== month) continue;
+    const a = (agg[r.sku] = agg[r.sku] || { revenue: 0, qty: 0, category: r.category || '' });
+    a.revenue += num(r.revenue);
+    a.qty += num(r.qty);
+    if (!a.category && r.category) a.category = r.category;
+  }
+
+  // ---- 2. 广告花费分摊到 SKU ----
+  // ads 表只有 week_label 没有日期，先用周起始日归到月份；
+  // campaign 名形如 "XFKF-MA-1666-34 (Auto)"，按去掉 XFKF- 前缀后的前缀匹配到 SKU。
+  // campaign 名形如 "XFKF-MA-1772-26 (Auto)" —— 空格后面的 "(Auto)" / "(Manual)" / "Brand"
+  // 是投放类型后缀，不是 SKU 的一部分。截掉再比，否则一个都匹配不上。
+  const norm = (s) => String(s || '').toUpperCase().replace(/^XFKF-/, '').trim();
+  const adsBySku = {};
+  let adsTotal = 0;
+  let adsHasData = false;
+  for (const a of ads || []) {
+    const wm = weekStart(a.week_label, epochDate, epochWeek).slice(0, 7);
+    if (wm !== month) continue;
+    adsHasData = true;
+    const spend = num(a.spend);
+    adsTotal += spend;
+    const cn = norm(a.campaign).split(/\s+/)[0];
+    const hit = Object.keys(agg).find((sku) => {
+      const sn = norm(sku).split(/\s+/)[0];
+      return cn && sn && (sn.startsWith(cn) || cn.startsWith(sn));
+    });
+    if (hit) {
+      adsBySku[hit] = (adsBySku[hit] || 0) + spend;
+    } else {
+      // campaign 匹配不上 SKU：先攒着，稍后按营收占比摊
+      adsBySku.__unmatched = (adsBySku.__unmatched || 0) + spend;
+    }
+  }
+  const monthRevenue = sum(Object.values(agg).map((a) => a.revenue));
+  const unmatched = adsBySku.__unmatched || 0;
+  if (unmatched > 0 && monthRevenue > 0) {
+    for (const [sku, a] of Object.entries(agg)) {
+      adsBySku[sku] = (adsBySku[sku] || 0) + (unmatched * a.revenue) / monthRevenue;
+    }
+  }
+  delete adsBySku.__unmatched;
+
+  // ---- 3. 逐 SKU 算单位经济 ----
+  // 明细没数据的 SKU 也要列出来（从 sku_master / inventory 兜底），
+  // 否则 Yitta 看不到「哪些 SKU 还缺成本」，填表无从下手。
+  const skuSet = uniq([...Object.keys(agg), ...skuMaster.map((m) => m.sku), ...(opts.extraSkus || [])])
+    .filter(Boolean);
+
+  const rows = skuSet.map((sku) => {
+    const m = master[sku] || {};
+    const a = agg[sku] || { revenue: 0, qty: 0, category: '' };
+    const qty = num(a.qty);
+    const revenue = num(a.revenue);
+    const asp = qty > 0 ? revenue / qty : num(m.price_aud) || 0;
+
+    // 采购成本折成 AUD
+    const rawCost = num(m.cost);
+    const cur = String(m.cost_currency || 'RMB').toUpperCase();
+    let unitCostAud = null;
+    if (rawCost > 0) {
+      if (cur === 'RMB' || cur === 'CNY') {
+        unitCostAud = fxAudCny > 0 ? rawCost / fxAudCny : null;
+      } else {
+        unitCostAud = rawCost; // 已经是 AUD
+      }
+    }
+
+    const fulfilPct = num(m.fulfil_pct) || globalFulfil;
+    const unitFulfil = asp * (fulfilPct / 100);
+
+    const hasCost = unitCostAud !== null && unitCostAud > 0 && asp > 0;
+    const unitMargin = hasCost ? asp - unitCostAud - unitFulfil : null;
+    const marginPct = hasCost && asp > 0 ? (unitMargin / asp) * 100 : null;
+
+    const adsSpend = num(adsBySku[sku] || 0);
+    const acos = revenue > 0 && adsHasData ? (adsSpend / revenue) * 100 : null;
+
+    const grossProfit = hasCost ? unitMargin * qty : null;
+    const netProfit = hasCost ? grossProfit - adsSpend : null;
+    const netPct = hasCost && revenue > 0 ? (netProfit / revenue) * 100 : null;
+    // 安全垫：毛利率 − ACOS（百分点）。>0 投流边际赚钱，越大越该加投。
+    const safety = hasCost && acos !== null ? marginPct - acos : null;
+
+    return {
+      sku,
+      cat: m.category || a.category || '-',
+      qty,
+      revenue: round2(revenue),
+      asp: round2(asp),
+      unitCostAud: unitCostAud === null ? null : round2(unitCostAud),
+      fulfilPct: round2(fulfilPct),
+      unitFulfil: round2(unitFulfil),
+      unitMargin: unitMargin === null ? null : round2(unitMargin),
+      marginPct: marginPct === null ? null : round2(marginPct),
+      grossProfit: grossProfit === null ? null : round2(grossProfit),
+      adsSpend: round2(adsSpend),
+      acos: acos === null ? null : round2(acos),
+      netProfit: netProfit === null ? null : round2(netProfit),
+      netPct: netPct === null ? null : round2(netPct),
+      safety: safety === null ? null : round2(safety),
+      hasCost,
+    };
+  });
+
+  // 有销量的排前面，其次按毛利额
+  rows.sort((x, y) => y.revenue - x.revenue || (y.grossProfit ?? -1e9) - (x.grossProfit ?? -1e9));
+
+  const missingCost = rows.filter((r) => !r.hasCost).length;
+
+  return {
+    month,
+    fulfilPct: globalFulfil,
+    fulfilPctConfirmed: confirmed,
+    fxAudCny,
+    adsTotal: round2(adsTotal),
+    adsHasData,
+    adsAllocated: round2(sum(rows.map((r) => r.adsSpend))),
+    missingCost,
+    skuCount: rows.length,
+    rows,
+  };
+}
+
+/* ============================================================
  * 核心：聚合成看板所需的 JSON
  * ========================================================== */
 async function buildDashboard(env) {
   const meta = await getMeta(env);
   const ov = await getOverrides(env);
 
-  const epochDate = meta.week_epoch_date || '2026-06-07';
-  const epochWeek = Number(meta.week_epoch_label || 23);
+  const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
+  const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
 
   const sales = (await env.DB.prepare('SELECT * FROM sales_orders').all()).results || [];
   const inv = (await env.DB.prepare('SELECT * FROM inventory').all()).results || [];
@@ -263,25 +455,79 @@ async function buildDashboard(env) {
   // --- 5. 库存 ---
   const masterBySku = indexBy(skuMaster, 'sku');
   const lastWeekQty = {}, last7Qty = {};
+
+  // 补货参数（meta 可覆盖；默认值标「待核验」，见 schema.sql 注释）
+  const defaultLeadTime = Number(meta.lead_time_days || 45);
+  const bufferDays = Number(meta.buffer_days || 14);
+  const windowDays = Number(meta.demand_window_days || 28);
+
   const cutoff = new Date(`${maxDate(sales)}T00:00:00Z`);
   const d7Start = new Date(cutoff.getTime() - 6 * 86400000);
+  // 日均销量窗口：默认 28 天。比「近 7 天」稳得多 ——
+  // 一个 SKU 一周只卖 1~2 件，7 天窗口的日均会在 0.14 和 0.43 之间乱跳，
+  // 用它算可售天，同一款上周显示 50 天、这周就变 16 天，这就是「数据对不上」的来源之一。
+  const winStart = new Date(cutoff.getTime() - (windowDays - 1) * 86400000);
+  const winQty = {};
+  let firstSaleDate = '';
+
   for (const r of sales) {
     if (!r.sku) continue;
     if (r.week_label === lastWeek) lastWeekQty[r.sku] = (lastWeekQty[r.sku] || 0) + num(r.qty);
-    if (r.order_date) {
-      const d = new Date(`${r.order_date}T00:00:00Z`);
-      if (d >= d7Start && d <= cutoff) last7Qty[r.sku] = (last7Qty[r.sku] || 0) + num(r.qty);
-    }
+    if (!r.order_date) continue;
+    if (!firstSaleDate || r.order_date < firstSaleDate) firstSaleDate = r.order_date;
+    const d = new Date(`${r.order_date}T00:00:00Z`);
+    if (d >= d7Start && d <= cutoff) last7Qty[r.sku] = (last7Qty[r.sku] || 0) + num(r.qty);
+    if (d >= winStart && d <= cutoff) winQty[r.sku] = (winQty[r.sku] || 0) + num(r.qty);
   }
 
-  // 状态分级：断货 > 紧急 > 偏低 > 尚可 > 充足（与看板配色一致）
-  const grade = (onHand, days, safetyDays) => {
+  // 实际覆盖天数：数据不满 windowDays 时按真实天数除，否则日均会被系统性低估
+  let coveredDays = windowDays;
+  if (firstSaleDate && Number.isFinite(cutoff.getTime())) {
+    const fd = new Date(`${firstSaleDate}T00:00:00Z`).getTime();
+    const span = Math.floor((cutoff.getTime() - fd) / 86400000) + 1;
+    if (span > 0) coveredDays = Math.min(windowDays, span);
+  }
+
+  /**
+   * 日均销量：优先用 28 天窗口，没有则退回上周 / 近 7 天。
+   * 返回 0 表示卖不动或没数据，调用方按 daily<=0 → days=null 处理。
+   */
+  const dailyOf = (sku) => {
+    const w = winQty[sku] ?? 0;
+    if (w > 0) return w / coveredDays;
+    const wk = lastWeekQty[sku] ?? 0;
+    if (wk > 0) return wk / 7;
+    return (last7Qty[sku] ?? 0) / 7;
+  };
+
+  /**
+   * 状态分级：断货 > 紧急 > 偏低 > 尚可 > 充足（与看板配色一致）
+   * 阈值改成看「补货提前期」而不是拍一个固定天数：
+   *   days < leadTime          → 现在下单都来不及，货到之前必断（紧急）
+   *   days < leadTime + buffer → 该下单了（偏低）
+   *   再往上 → 尚可 / 充足
+   */
+  const grade = (onHand, days, leadTime) => {
     if (onHand <= 0) return { text: '断货', cls: 'tag-red', priority: 'P0' };
     if (days === null) return { text: '待核验', cls: 'tag-green', priority: '-' };
-    if (days < safetyDays * 0.5) return { text: '紧急', cls: 'tag-red', priority: 'P0' };
-    if (days < safetyDays) return { text: '偏低', cls: 'tag-amber', priority: 'P1' };
-    if (days < safetyDays * 2) return { text: '尚可', cls: 'tag-green', priority: '-' };
+    if (days < leadTime) return { text: '紧急', cls: 'tag-red', priority: 'P0' };
+    if (days < leadTime + bufferDays) return { text: '偏低', cls: 'tag-amber', priority: 'P1' };
+    if (days < (leadTime + bufferDays) * 2) return { text: '尚可', cls: 'tag-green', priority: '-' };
     return { text: '充足', cls: 'tag-green', priority: '-' };
+  };
+
+  /**
+   * 安全库存：CSV 里手工填了就用手工值，没填（填 0）就自动算。
+   *   SS   = 日均 × buffer          纯波动缓冲
+   *   目标 = 日均 × (提前期 + buffer) + SS
+   *   建议 = max(0, 目标 − 现有 − 在途)
+   */
+  const replenish = (r, m, daily) => {
+    const leadTime = num(m.lead_time_days) || defaultLeadTime;
+    const manual = num(r.safety_stock);
+    const ss = manual > 0 ? manual : Math.ceil(daily * bufferDays);
+    const target = Math.ceil(daily * (leadTime + bufferDays)) + ss;
+    return { leadTime, safetyStock: ss, safetyAuto: manual <= 0, target };
   };
 
   let invData = inv.map((r) => {
@@ -289,11 +535,10 @@ async function buildDashboard(env) {
     const onHand = num(r.on_hand);
     const inbound = num(r.inbound);
     const d7 = last7Qty[r.sku] ?? 0;
-    const weekQty = lastWeekQty[r.sku] ?? 0;
-    const daily = (d7 || weekQty) / 7;
+    const daily = dailyOf(r.sku);
     const days = daily > 0 ? Math.round(onHand / daily) : null;
-    const safetyDays = num(m.safety_days) || 21;
-    const g = grade(onHand, days, safetyDays);
+    const rp = replenish(r, m, daily);
+    const g = grade(onHand, days, rp.leadTime);
     return {
       sku: r.sku,
       type: m.category || '-',
@@ -304,7 +549,11 @@ async function buildDashboard(env) {
       days,
       status: g.cls,
       statusText: g.text,
-      suggest: Math.max(0, Math.ceil(daily * (safetyDays + 30) - onHand - inbound)),
+      // safetyAuto=true 表示安全库存是系统按「日均×缓冲」算的，不是你手工填的
+      safetyStock: rp.safetyStock,
+      safetyAuto: rp.safetyAuto,
+      leadTime: rp.leadTime,
+      suggest: Math.max(0, rp.target - onHand - inbound),
       eta: r.eta || '',
     };
   });
@@ -315,10 +564,10 @@ async function buildDashboard(env) {
     const inbound = num(r.inbound);
     const weekQty = lastWeekQty[r.sku] ?? null;
     const d7 = last7Qty[r.sku] ?? null;
-    const daily = d7 ? d7 / 7 : weekQty ? weekQty / 7 : 0;
+    const daily = dailyOf(r.sku);
     const days = daily > 0 ? Math.round(onHand / daily) : null;
-    const safetyDays = num(m.safety_days) || 21;
-    const g = grade(onHand, days, safetyDays);
+    const rp = replenish(r, m, daily);
+    const g = grade(onHand, days, rp.leadTime);
     return {
       sku: r.sku,
       cat: m.category || '-',
@@ -327,7 +576,9 @@ async function buildDashboard(env) {
       d7,
       days,
       status: g.text,
-      suggest: g.priority === '-' ? 0 : Math.max(0, Math.ceil(daily * (safetyDays + 30) - onHand - inbound)),
+      safetyStock: rp.safetyStock,
+      leadTime: rp.leadTime,
+      suggest: g.priority === '-' ? 0 : Math.max(0, rp.target - onHand - inbound),
       priority: g.priority,
     };
   }).sort((a, b) => rankP(b.priority) - rankP(a.priority) || (a.days ?? 999) - (b.days ?? 999));
@@ -371,6 +622,34 @@ async function buildDashboard(env) {
     );
   }
 
+  // --- 7. SKU 毛利（按自然月）---
+  const adsRows = (await env.DB.prepare('SELECT * FROM ads').all()).results || [];
+  const marginData = buildMargin(sales, skuMaster, adsRows, meta, {
+    extraSkus: inv.map((r) => r.sku),
+  });
+
+  // 毛利相关告警：成本没填 / 费率是估值，都要显形，不能拿估算值当真账
+  if (marginData.missingCost > 0) {
+    warnings.push(
+      `产品定位矩阵：${marginData.missingCost}/${marginData.skuCount} 个 SKU 还没填采购成本，` +
+      `这些 SKU 的毛利、毛利率、投流安全垫都算不出来，表格里显示「待填成本」。` +
+      `把 multitable/05_SKU成本_待填.csv 的采购价填好再导入就能算。`
+    );
+  }
+  if (!marginData.fulfilPctConfirmed) {
+    warnings.push(
+      `毛利用的是估算费率：佣金+履约合计 ${marginData.fulfilPct}%（澳洲大件家居行业经验值，` +
+      `不是 RoomSense 真实费率）。拿到真实费率后填进 meta.fulfil_pct 并把 fulfil_pct_confirmed 设为 1，` +
+      `这条告警才会消失。`
+    );
+  }
+  if (!marginData.adsHasData) {
+    warnings.push(
+      `${marginData.month} 没有广告数据（ads 表空或没落在这一月），` +
+      `所以「投流后净利」暂时等于毛利、ACOS 显示「—」。广告数据导入后自动补上。`
+    );
+  }
+
   return {
     weeklyData,
     skuWeeklyData,
@@ -378,6 +657,7 @@ async function buildDashboard(env) {
     platData,
     invData,
     invSuggestData,
+    marginData,
     kpi,
     warnings,
     meta: {
@@ -401,8 +681,8 @@ async function buildDashboard(env) {
 async function insertSales(env, rows) {
   if (!rows.length) return 0;
   const meta = await getMeta(env);
-  const epochDate = meta.week_epoch_date || '2026-06-07';
-  const epochWeek = Number(meta.week_epoch_label || 23);
+  const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
+  const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
 
   const stmt = env.DB.prepare(
     `INSERT INTO sales_orders(order_date, week_label, platform, order_no, sku, category,
@@ -568,52 +848,95 @@ async function importCsv(env, body) {
  * 各类表的写入（CSV 导入与多维表同步共用同一套，保证口径一致）
  * ========================================================== */
 async function upsertInventory(env, records) {
+  // 快照日期：CSV 里可填「快照日期 / snapshot_date」列补录历史；没填就用今天。
+  const snapDate =
+    normDate(records[0]?.snapshot_date || records[0]?.['快照日期'] || '') ||
+    new Date().toISOString().slice(0, 10);
+
+  const rows = records
+    .filter((r) => r.sku || r['SKU'])
+    .map((r) => ({
+      sku: r.sku || r['SKU'],
+      onHand: num(r.on_hand ?? r['现有库存'] ?? 0),
+      inbound: num(r.inbound ?? r['在途'] ?? 0),
+      safety: num(r.safety_stock ?? r['安全库存'] ?? 0),
+      eta: normDate(r.eta || r['预计到货'] || ''),
+    }));
+  if (!rows.length) return { ok: true, upserted: 0 };
+
+  // 1) 当前状态：覆盖更新，一行一个 SKU
   const stmt = env.DB.prepare(
     `INSERT INTO inventory(sku, on_hand, inbound, safety_stock, eta, updated_at)
      VALUES(?,?,?,?,?, datetime('now'))
      ON CONFLICT(sku) DO UPDATE SET on_hand=excluded.on_hand, inbound=excluded.inbound,
        safety_stock=excluded.safety_stock, eta=excluded.eta, updated_at=datetime('now')`
   );
-  const batch = records
-    .filter((r) => r.sku || r['SKU'])
-    .map((r) =>
-      stmt.bind(
-        r.sku || r['SKU'],
-        num(r.on_hand ?? r['现有库存'] ?? 0),
-        num(r.inbound ?? r['在途'] ?? 0),
-        num(r.safety_stock ?? r['安全库存'] ?? 0),
-        normDate(r.eta || r['预计到货'] || '')
-      )
+  await env.DB.batch(
+    rows.map((r) => stmt.bind(r.sku, r.onHand, r.inbound, r.safety, r.eta))
+  );
+
+  // 2) 历史快照：同一天重复导入会覆盖（唯一索引），不会攒重复行。
+  //    老库没建这张表时静默跳过 —— 快照是增强，不该让导入失败。
+  try {
+    const snap = env.DB.prepare(
+      `INSERT INTO inventory_snapshot(snapshot_date, sku, on_hand, inbound, safety_stock, eta)
+       VALUES(?,?,?,?,?,?)
+       ON CONFLICT(sku, snapshot_date) DO UPDATE SET on_hand=excluded.on_hand,
+         inbound=excluded.inbound, safety_stock=excluded.safety_stock, eta=excluded.eta`
     );
-  if (!batch.length) return { ok: true, upserted: 0 };
-  await env.DB.batch(batch);
-  return { ok: true, upserted: batch.length };
+    await env.DB.batch(
+      rows.map((r) => snap.bind(snapDate, r.sku, r.onHand, r.inbound, r.safety, r.eta))
+    );
+  } catch (e) {
+    return { ok: true, upserted: rows.length, snapshotDate: null, snapshotError: String(e.message || e) };
+  }
+
+  return { ok: true, upserted: rows.length, snapshotDate: snapDate };
 }
 
 async function upsertSkuMaster(env, records) {
-  const stmt = env.DB.prepare(
-    `INSERT INTO sku_master(sku, name, category, spec, cost, cost_currency, safety_days)
-     VALUES(?,?,?,?,?,?,?)
-     ON CONFLICT(sku) DO UPDATE SET name=excluded.name, category=excluded.category,
-       spec=excluded.spec, cost=excluded.cost, cost_currency=excluded.cost_currency,
-       safety_days=excluded.safety_days`
-  );
+  // price_aud / fulfil_pct / lead_time_days 是后加的列，老库可能没有。
+  // 逐列探测，缺哪列就退化成不含该列的 SQL —— 保证老库导入不炸。
+  const cols = await tableColumns(env, 'sku_master');
+  const has = (c) => !cols.length || cols.includes(c);
+
+  const base = ['sku', 'name', 'category', 'spec', 'cost', 'cost_currency', 'safety_days'];
+  const extra = [];
+  if (has('price_aud')) extra.push('price_aud');
+  if (has('fulfil_pct')) extra.push('fulfil_pct');
+  if (has('lead_time_days')) extra.push('lead_time_days');
+  const all = base.concat(extra);
+
+  const sql =
+    `INSERT INTO sku_master(${all.join(',')}) VALUES(${all.map(() => '?').join(',')})\n` +
+    '     ON CONFLICT(sku) DO UPDATE SET ' +
+    all
+      .filter((c) => c !== 'sku')
+      .map((c) => `${c}=excluded.${c}`)
+      .join(', ');
+
+  const stmt = env.DB.prepare(sql);
   const batch = records
     .filter((r) => r.sku || r['SKU'])
-    .map((r) =>
-      stmt.bind(
+    .map((r) => {
+      const vals = [
         r.sku || r['SKU'],
         r.name || r['品名'] || '',
         r.category || r['品类'] || '',
         r.spec || r['规格'] || '',
         num(r.cost ?? r['采购价'] ?? 0),
         r.cost_currency || r['币种'] || 'RMB',
-        num(r.safety_days ?? r['安全库存天数'] ?? 21)
-      )
-    );
+        // 安全库存天数：CSV 没填就保持默认（21），不写死覆盖
+        r.safety_days ?? r['安全库存天数'] ?? 21,
+      ];
+      if (has('price_aud')) vals.push(num(r.price_aud ?? r['售价AUD'] ?? 0));
+      if (has('fulfil_pct')) vals.push(num(r.fulfil_pct ?? r['履约费率'] ?? 0));
+      if (has('lead_time_days')) vals.push(num(r.lead_time_days ?? r['补货提前期'] ?? 0));
+      return stmt.bind(...vals);
+    });
   if (!batch.length) return { ok: true, upserted: 0 };
   await env.DB.batch(batch);
-  return { ok: true, upserted: batch.length };
+  return { ok: true, upserted: batch.length, columns: all.length };
 }
 
 async function insertAds(env, records) {
@@ -779,6 +1102,20 @@ function indexBy(rows, key) {
   const m = {};
   for (const r of rows) m[r[key]] = r;
   return m;
+}
+
+/**
+ * 查某张表实际有哪些列。后加的列（price_aud / fulfil_pct / lead_time_days）
+ * 在老库里可能还没建，导入前探一下，缺哪列就退化成不含该列的 SQL。
+ * 查不到（权限 / 不支持 PRAGMA）时返回空数组，调用方按「全都有」处理。
+ */
+async function tableColumns(env, table) {
+  try {
+    const r = await env.DB.prepare(`PRAGMA table_info(${table})`).all();
+    return (r.results || []).map((x) => x.name);
+  } catch (e) {
+    return [];
+  }
 }
 
 function rankP(p) {

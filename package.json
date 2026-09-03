@@ -15,7 +15,11 @@
     "build:frontend": "python3 tools/build_frontend.py",
     "build:seed": "python3 tools/build_seed.py",
     "test": "node --experimental-sqlite tools/test_local.mjs",
-    "test:fx": "node --experimental-sqlite tools/test_fx.mjs"
+    "test:fx": "node --experimental-sqlite tools/test_fx.mjs",
+    "test:margin": "node --experimental-sqlite tools/test_margin.mjs",
+    "test:all": "npm run test && npm run test:fx && npm run test:margin && npm run test:ui",
+    "export": "node --experimental-sqlite tools/export_for_multitable.mjs",
+    "test:ui": "node tools/test_margin_ui.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

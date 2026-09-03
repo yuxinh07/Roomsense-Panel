@@ -179,6 +179,8 @@ async function boot() {
   }
   renderDashboard(data);
   applyKpi(data);
+  // 8月毛利 × 投流决策（public/margin.js，独立文件，不随本文件重新生成）
+  if (window.RoomSenseMargin) window.RoomSenseMargin.render(data);
 }
 
 if (document.readyState === 'loading') {

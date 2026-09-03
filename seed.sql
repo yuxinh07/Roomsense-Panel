@@ -153,23 +153,7 @@ INSERT INTO overrides(key, value, note) VALUES('kpi.thisWeek', '4737', '8/22-8/2
 INSERT INTO overrides(key, value, note) VALUES('kpi.netJuly', '13843', '7月净结算额');
 INSERT INTO overrides(key, value, note) VALUES('kpi.adsJuly', '1054', '7月广告投入');
 
--- 5) SKU 主数据（品类）
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1666-34-S', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1666-34-KS', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1666-34-D', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1666-34-Q', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1667-30-S', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1667-30-KS', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1667-30-D', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1667-30-Q', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1667-30-K', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-PL-1167F-WH', '枕头', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-PL-1168R-WH', '枕头', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-PL-1169R-WH', '枕头', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1772-26-S', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1772-26-KS', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1772-26-D', '床垫', 21);
-INSERT OR REPLACE INTO sku_master(sku, category, safety_days) VALUES('XFKF-MA-1772-26-Q', '床垫', 21);
+-- 5) SKU 主数据：见文件末尾那段（含品名/规格/采购成本，成本待填）
 
 -- 6) 库存明细
 INSERT OR REPLACE INTO inventory(sku, on_hand, inbound, safety_stock, eta, updated_at) VALUES('XFKF-MA-1666-34-S', 7, 10, 0, '', datetime('now'));
@@ -192,3 +176,24 @@ INSERT OR REPLACE INTO inventory(sku, on_hand, inbound, safety_stock, eta, updat
 -- 7) 库存表在无销售明细时（d7/可售天数算不出来），先沿用离线看板的结论
 INSERT INTO overrides(key, value, note) VALUES('invData', '[{"sku": "XFKF-MA-1666-34-S", "type": "床垫", "inv": 7, "recv": 10, "d7": 0, "d30": 0.14, "days": null, "status": "tag-amber", "statusText": "偏低", "suggest": 10}, {"sku": "XFKF-MA-1666-34-KS", "type": "床垫", "inv": 12, "recv": 15, "d7": 0, "d30": 0.14, "days": null, "status": "tag-green", "statusText": "尚可", "suggest": 0}, {"sku": "XFKF-MA-1666-34-D", "type": "床垫", "inv": 7, "recv": 10, "d7": 0.14, "d30": 0.14, "days": 50, "status": "tag-amber", "statusText": "偏低", "suggest": 15}, {"sku": "XFKF-MA-1666-34-Q", "type": "床垫", "inv": 19, "recv": 34, "d7": 0.57, "d30": 0.57, "days": 33, "status": "tag-green", "statusText": "尚可", "suggest": 10}, {"sku": "XFKF-MA-1667-30-S", "type": "床垫", "inv": 11, "recv": 15, "d7": 0.14, "d30": 0.14, "days": 79, "status": "tag-green", "statusText": "尚可", "suggest": 0}, {"sku": "XFKF-MA-1667-30-KS", "type": "床垫", "inv": 13, "recv": 15, "d7": 0, "d30": 0.14, "days": null, "status": "tag-green", "statusText": "尚可", "suggest": 0}, {"sku": "XFKF-MA-1667-30-D", "type": "床垫", "inv": 19, "recv": 30, "d7": 0, "d30": 0.43, "days": null, "status": "tag-green", "statusText": "充足", "suggest": 0}, {"sku": "XFKF-MA-1667-30-Q", "type": "床垫", "inv": 32, "recv": 39, "d7": 0.29, "d30": 0.29, "days": 110, "status": "tag-green", "statusText": "充足", "suggest": 0}, {"sku": "XFKF-MA-1667-30-K", "type": "床垫", "inv": 18, "recv": 25, "d7": 0, "d30": 0.43, "days": null, "status": "tag-green", "statusText": "尚可", "suggest": 0}, {"sku": "XFKF-PL-1167F-WH", "type": "枕头", "inv": 25, "recv": 53, "d7": 0, "d30": 1.0, "days": null, "status": "tag-green", "statusText": "充足", "suggest": 0}, {"sku": "XFKF-PL-1168R-WH", "type": "枕头", "inv": 27, "recv": 48, "d7": 0.29, "d30": 0.86, "days": 93, "status": "tag-green", "statusText": "充足", "suggest": 0}, {"sku": "XFKF-PL-1169R-WH", "type": "枕头", "inv": 0, "recv": 43, "d7": 0, "d30": 0.71, "days": 0, "status": "tag-red", "statusText": "断货", "suggest": 150}, {"sku": "XFKF-MA-1772-26-S", "type": "床垫", "inv": 12, "recv": 20, "d7": 0, "d30": 0.14, "days": null, "status": "tag-green", "statusText": "尚可", "suggest": 10}, {"sku": "XFKF-MA-1772-26-KS", "type": "床垫", "inv": 22, "recv": 30, "d7": 0.14, "d30": 0.29, "days": 157, "status": "tag-green", "statusText": "充足", "suggest": 0}, {"sku": "XFKF-MA-1772-26-D", "type": "床垫", "inv": 2, "recv": 20, "d7": 0.14, "d30": 0.29, "days": 14, "status": "tag-red", "statusText": "紧急", "suggest": 30}, {"sku": "XFKF-MA-1772-26-Q", "type": "床垫", "inv": 44, "recv": 64, "d7": 0.14, "d30": 0.43, "days": 314, "status": "tag-green", "statusText": "充足", "suggest": 0}]', '迁移自离线看板');
 INSERT INTO overrides(key, value, note) VALUES('invSuggestData', '[{"sku": "XFKF-PL-1169R-WH", "cat": "枕头", "inv": 0, "weekQty": 0, "d7": 0, "days": 0, "status": "断货", "suggest": 150, "priority": "P0"}, {"sku": "XFKF-MA-1772-26-D", "cat": "床垫", "inv": 2, "weekQty": null, "d7": null, "days": null, "status": "紧急", "suggest": 30, "priority": "P0"}, {"sku": "XFKF-MA-1666-34-D", "cat": "床垫", "inv": 7, "weekQty": null, "d7": null, "days": null, "status": "偏低", "suggest": 15, "priority": "P1"}, {"sku": "XFKF-MA-1666-34-S", "cat": "床垫", "inv": 7, "weekQty": null, "d7": null, "days": null, "status": "偏低", "suggest": 10, "priority": "P1"}, {"sku": "XFKF-MA-1772-26-S", "cat": "床垫", "inv": 12, "weekQty": null, "d7": null, "days": null, "status": "偏低", "suggest": 15, "priority": "P1"}, {"sku": "XFKF-PL-1168R-WH", "cat": "枕头", "inv": 27, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-PL-1167F-WH", "cat": "枕头", "inv": 25, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1667-30-KS", "cat": "床垫", "inv": 13, "weekQty": null, "d7": null, "days": null, "status": "尚可", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1666-34-Q", "cat": "床垫", "inv": 19, "weekQty": null, "d7": null, "days": null, "status": "尚可", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1667-30-K", "cat": "床垫", "inv": 18, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1772-26-KS", "cat": "床垫", "inv": 22, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1666-34-KS", "cat": "床垫", "inv": 12, "weekQty": null, "d7": null, "days": null, "status": "尚可", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1667-30-S", "cat": "床垫", "inv": 11, "weekQty": null, "d7": null, "days": null, "status": "尚可", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1667-30-D", "cat": "床垫", "inv": 19, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1772-26-Q", "cat": "床垫", "inv": 44, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}, {"sku": "XFKF-MA-1667-30-Q", "cat": "床垫", "inv": 32, "weekQty": null, "d7": null, "days": null, "status": "充足", "suggest": 0, "priority": "-"}]', '迁移自离线看板');
+
+-- SKU 主数据：16 个在售 SKU。
+-- 采购价全部留 0 = 待填 —— 这是「8月毛利」算不出来的唯一原因。
+-- 填好 multitable/08_SKU成本_待填.csv 再导入，毛利矩阵立刻就能算。
+INSERT OR REPLACE INTO sku_master(sku, name, category, spec, cost, cost_currency, price_aud, fulfil_pct, lead_time_days, safety_days) VALUES
+  ('XFKF-MA-1666-34-D', '1666 34cm Double', '床垫', '1666 34cm Double', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1666-34-KS', '1666 34cm King Single', '床垫', '1666 34cm King Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1666-34-Q', '1666 34cm Queen', '床垫', '1666 34cm Queen', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1666-34-S', '1666 34cm Single', '床垫', '1666 34cm Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1667-30-D', '1667 30cm Double', '床垫', '1667 30cm Double', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1667-30-K', '1667 30cm King', '床垫', '1667 30cm King', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1667-30-KS', '1667 30cm King Single', '床垫', '1667 30cm King Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1667-30-Q', '1667 30cm Queen', '床垫', '1667 30cm Queen', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1667-30-S', '1667 30cm Single', '床垫', '1667 30cm Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1772-26-D', '1772 26cm Double', '床垫', '1772 26cm Double', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1772-26-KS', '1772 26cm King Single', '床垫', '1772 26cm King Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1772-26-Q', '1772 26cm Queen', '床垫', '1772 26cm Queen', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-MA-1772-26-S', '1772 26cm Single', '床垫', '1772 26cm Single', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-PL-1167F-WH', '1167F White', '枕头', '1167F White', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-PL-1168R-WH', '1168R White', '枕头', '1168R White', 0, 'RMB', 0, 0, 0, 21),
+  ('XFKF-PL-1169R-WH', '1169R White', '枕头', '1169R White', 0, 'RMB', 0, 0, 0, 21);

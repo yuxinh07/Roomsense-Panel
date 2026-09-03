@@ -39,7 +39,13 @@ CREATE TABLE IF NOT EXISTS sku_master (
   spec        TEXT,                     -- Queen / Double ...
   cost        REAL DEFAULT 0,           -- 采购单价 (AUD 或 RMB，见 cost_currency)
   cost_currency TEXT DEFAULT 'RMB',
-  safety_days INTEGER DEFAULT 21,       -- 安全库存天数
+  price_aud   REAL DEFAULT 0,           -- 单件售价 ex.GST (AUD)。0 = 从销售明细反推 ASP
+                                        -- 没填也不慌：有销售明细时系统用 营收/销量 自动算 ASP
+  fulfil_pct  REAL DEFAULT 0,           -- 该 SKU 的佣金+履约费率 %。0 = 用 meta.fulfil_pct
+                                        -- 大件（床垫）和小件（枕头）费率差很多，能分开就分开填
+  lead_time_days INTEGER DEFAULT 0,     -- 补货提前期（下单→入仓）天数。0 = 用 meta.lead_time_days
+                                        -- 海运中国→澳洲通常 40~50 天，空运 7~12 天，按 SKU 实际填
+  safety_days INTEGER DEFAULT 21,       -- 安全库存天数（分级阈值，0 = 用 lead_time+buffer）
   active      INTEGER DEFAULT 1
 );
 
@@ -74,6 +80,24 @@ CREATE TABLE IF NOT EXISTS overrides (
   updated_at TEXT DEFAULT (datetime('now'))
 );
 
+-- 5.5 库存快照（历史）：每次导入 03_库存.csv 时自动追加一条
+--     为什么单独一张表：inventory 是「当前状态」，一行一个 SKU，前端读它最快；
+--     历史留在这张表里，算周转率 / 缺货频次 / 补货及时率全靠它。
+--     没这张表就只能看到「现在剩多少」，看不出「什么时候开始偏的」。
+CREATE TABLE IF NOT EXISTS inventory_snapshot (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  snapshot_date TEXT NOT NULL,          -- 快照日期 YYYY-MM-DD
+  sku           TEXT NOT NULL,
+  on_hand       INTEGER DEFAULT 0,
+  inbound       INTEGER DEFAULT 0,
+  safety_stock  INTEGER DEFAULT 0,
+  eta           TEXT,
+  created_at    TEXT DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_inv_snap_sku ON inventory_snapshot(sku, snapshot_date);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_inv_snap_uniq ON inventory_snapshot(sku, snapshot_date);
+-- 同一天重复导入会覆盖（ON CONFLICT），不会产生重复行
+
 -- 6. 元信息（数据周期、更新时间、汇率等）
 CREATE TABLE IF NOT EXISTS meta (
   key   TEXT PRIMARY KEY,
@@ -89,9 +113,24 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
                                        -- 是行内汇率，更准
                                        -- 万一某行漏填了行内汇率，才会用这个兜底
                                        -- 0 = 未配置；USD 缺汇率的行营收按 0 计，不会静默按 1 折算
-  ('week_epoch_date',  '2026-06-07'),  -- 用户口径：这一天是 W23 的第一天
+  ('week_epoch_date',  '2026-05-30'),  -- W23 的第一天 = 2026-05-30（周六）
+                                       -- 口径来源：overrides('weekly.W35') 备注「8/22-8/28 用户确认总额」
+                                       -- 反推 W23 = 8/22 - (35-23)*7 = 2026-05-30
+                                       -- 一周 = 周六 00:00 ~ 周五 23:59
   ('week_epoch_label', '23'),          -- 对应周序号
-  ('sku_top_n', '10');                 -- SKU 趋势图展示前 N 个 SKU
+  ('sku_top_n', '10'),                -- SKU 趋势图展示前 N 个 SKU
+
+  -- ↓ 毛利计算参数。全部是「待核验」的估值，拿到真实数字请覆盖
+  ('fulfil_pct', '30'),               -- 佣金+履约（仓租/入出库/快递）合计占售价 %
+                                      -- 30% 是澳洲大件家居的行业经验值，不是 RoomSense 真实费率
+                                      -- 前端会持续告警，直到这里被真实数字覆盖
+  ('fulfil_pct_confirmed', '0'),      -- 1 = 已核实过这个费率（告警消失）
+  ('margin_month', '2026-08'),        -- 定位矩阵看哪个月的毛利（YYYY-MM）
+
+  -- ↓ 补货参数。同样是「待核验」的估值
+  ('lead_time_days', '45'),           -- 默认补货提前期（天）。海运中国→澳洲的经验值，待 Yitta 核实
+  ('buffer_days', '14'),              -- 缓冲天数，cover 销量波动
+  ('demand_window_days', '28');       -- 算日均销量看最近多少天（28 天比 7 天稳，波动小）
 
 -- 汇率口径（2026-09-03 简化版）：
 --   AUD → fx=1（不折算）
@@ -104,4 +143,6 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
 --   ALTER TABLE sales_orders ADD COLUMN shipping REAL DEFAULT 0;
 --   ALTER TABLE sales_orders ADD COLUMN currency TEXT DEFAULT 'AUD';
 --   ALTER TABLE sales_orders ADD COLUMN fx_rate  REAL DEFAULT 1;
+--   ALTER TABLE sku_master    ADD COLUMN price_aud  REAL DEFAULT 0;
+--   ALTER TABLE sku_master    ADD COLUMN fulfil_pct REAL DEFAULT 0;
 -- ───────────────────────────────────────────────────────

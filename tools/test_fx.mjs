@@ -187,19 +187,20 @@ function d1Adapter(sqlite) {
 const env = { DB: d1Adapter(db) };
 
 // 汇率：全局 1.50（兜底）—— 实际 Yitta 的数据每行都有行内汇率，这里没行内的 USD 才用兜底
-// 注意：schema 里 week_epoch_date=2026-06-07 / week_epoch_label=23，
-// 所以 2026-08-20/21 落在 W33，2026-08-27/28 落在 W34
+// 周次锚点：W23 = 2026-05-30（周六），一周 = 周六 ~ 周五
+//   W34 = 08-15 ~ 08-21  ← 2026-08-20/21 落这里
+//   W35 = 08-22 ~ 08-28  ← 2026-08-27/28 落这里（与 Yitta 确认的「W35 = 8/22-8/28」一致）
 db.prepare(`INSERT OR REPLACE INTO meta(key, value) VALUES('fx_usd_aud','1.50')`).run();
 
 // 直接调内部函数不方便，走 HTTP-ish 的 import 接口
 const rows = [
-  // W33 AUD：商品 900 + 邮费 100 = 1000 AUD（不折算）
+  // W34 AUD：商品 900 + 邮费 100 = 1000 AUD（不折算）
   { order_date: '2026-08-20', platform: 'Bunnings', order_no: 'T1', sku: 'S1', category: '床垫', qty: 1, goods: 900, shipping: 100, currency: 'AUD' },
-  // W33 USD（无行内汇率，靠 meta.fx_usd_aud 兜底 1.5）：商品 200 + 邮费 50 = 250 × 1.5 = 375 AUD
+  // W34 USD（无行内汇率，靠 meta.fx_usd_aud 兜底 1.5）：商品 200 + 邮费 50 = 250 × 1.5 = 375 AUD
   { order_date: '2026-08-21', platform: 'Bunnings', order_no: 'T2', sku: 'S2', category: '床垫', qty: 1, goods: 200, shipping: 50, currency: 'USD' },
-  // W34 USD（带行内汇率 1.5483，模拟 Temu - US）：商品 500 + 邮费 100 = 600 × 1.5483 = 928.98 AUD
+  // W35 USD（带行内汇率 1.5483，模拟 Temu - US）：商品 500 + 邮费 100 = 600 × 1.5483 = 928.98 AUD
   { order_date: '2026-08-27', platform: 'Amazon', order_no: 'T3', sku: 'S3', category: '枕头', qty: 2, goods: 500, shipping: 100, currency: 'USD', fx_rate: 1.5483 },
-  // W34 EUR：当前架构不支持 → 营收 0 + 告警
+  // W35 EUR：当前架构不支持 → 营收 0 + 告警
   { order_date: '2026-08-28', platform: 'Kmart', order_no: 'T4', sku: 'S4', category: '枕头', qty: 1, goods: 300, shipping: 0, currency: 'EUR' },
 ];
 
@@ -216,19 +217,21 @@ ok(imported.ok === true && imported.inserted === 4, '导入 4 行混合币种明
 
 const dash = await buildDashboard(env);
 
-ok(dash.meta && dash.meta.curWeek === 'W34', '当前周 W34', JSON.stringify(dash.meta?.curWeek));
-ok(near(dash.weeklyData.W33, 1375), 'W33 = 1000(AUD不折算) + 250×1.5(USD兜底) = 1375', `实际 ${dash.weeklyData?.W33}`);
-ok(near(dash.weeklyData.W34, 929), 'W34 = 600×1.5483(USD行内) + 0(EUR不支持) ≈ 929', `实际 ${dash.weeklyData?.W34}`);
+ok(dash.meta && dash.meta.curWeek === 'W35', '当前周 W35（8/22-8/28，与 Yitta 确认口径一致）', JSON.stringify(dash.meta?.curWeek));
+ok(near(dash.weeklyData.W34, 1375), 'W34 = 1000(AUD不折算) + 250×1.5(USD兜底) = 1375', `实际 ${dash.weeklyData?.W34}`);
+ok(near(dash.weeklyData.W35, 929), 'W35 = 600×1.5483(USD行内) + 0(EUR不支持) ≈ 929', `实际 ${dash.weeklyData?.W35}`);
 
+// 告警现在不止货币一条（还有缺成本 / 费率未核实 / 无广告数据），
+// 所以改成「必须包含 EUR 那条」，而不是断言总数
 const w = dash.warnings || [];
-ok(w.length === 1 && /EUR/.test(w[0]), 'EUR 触发 1 条「不支持」告警', JSON.stringify(w));
+ok(w.some((x) => /EUR/.test(x)), 'EUR 触发「不支持币种」告警', JSON.stringify(w));
 
 const fxRates = dash.meta?.fxRates || {};
 ok(fxRates.fx_usd_aud === '1.50', 'meta.fxRates 回传 fx_usd_aud', JSON.stringify(fxRates));
 
 // 平台维度也应已折算
 const amazon = (dash.platData || []).find((p) => p.name === 'Amazon');
-ok(amazon && near(amazon.thisWeek, 928.98), '平台维度 W34 Amazon = 928.98 AUD', JSON.stringify(amazon));
+ok(amazon && near(amazon.thisWeek, 928.98), '平台维度 W35 Amazon = 928.98 AUD', JSON.stringify(amazon));
 
 // 库里存的应是原币种
 const raw = db.prepare(`SELECT sku, goods, shipping, currency, fx_rate, revenue FROM sales_orders WHERE sku='S3'`).get();

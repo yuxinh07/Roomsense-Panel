@@ -55,25 +55,28 @@ fs.writeFileSync(path.join(OUT, '02_SKU周销量.csv'),
 files.push(['02_SKU周销量.csv', skuWeek.length + ' 行']);
 
 // ---------- 3. 库存 ----------
+// 快照日期留空 = 导入时用当天；想补录历史就填 YYYY-MM-DD。
+// 每次导入都会往 inventory_snapshot 追加一条，同一天重复导入只覆盖、不重复。
 const inv = q(`SELECT i.sku, m.category, i.on_hand, i.inbound, i.safety_stock, i.eta
                FROM inventory i LEFT JOIN sku_master m ON m.sku = i.sku
                ORDER BY i.sku`)
   .map((r) => ({
-    SKU: r.sku, 品类: r.category || '', 现有库存: r.on_hand,
+    快照日期: '', SKU: r.sku, 品类: r.category || '', 现有库存: r.on_hand,
     在途: r.inbound, 安全库存: r.safety_stock, 预计到货: r.eta || '',
   }));
 fs.writeFileSync(path.join(OUT, '03_库存.csv'),
-  csv(['SKU', '品类', '现有库存', '在途', '安全库存', '预计到货'], inv), 'utf8');
-files.push(['03_库存.csv', inv.length + ' 行']);
+  csv(['快照日期', 'SKU', '品类', '现有库存', '在途', '安全库存', '预计到货'], inv), 'utf8');
+files.push(['03_库存.csv', inv.length + ' 行（快照日期留空=今天）']);
 
 // ---------- 4. SKU 主数据 ----------
-const master = q('SELECT sku, name, category, spec, cost, cost_currency, safety_days FROM sku_master ORDER BY sku')
+const master = q('SELECT sku, name, category, spec, cost, cost_currency, price_aud, fulfil_pct, lead_time_days, safety_days FROM sku_master ORDER BY sku')
   .map((r) => ({
     SKU: r.sku, 品名: r.name || '', 品类: r.category || '', 规格: r.spec || '',
-    采购价: r.cost, 币种: r.cost_currency, 安全库存天数: r.safety_days,
+    采购价: r.cost, 币种: r.cost_currency, 售价AUD: r.price_aud, 履约费率: r.fulfil_pct,
+    补货提前期: r.lead_time_days, 安全库存天数: r.safety_days,
   }));
 fs.writeFileSync(path.join(OUT, '04_SKU主数据.csv'),
-  csv(['SKU', '品名', '品类', '规格', '采购价', '币种', '安全库存天数'], master), 'utf8');
+  csv(['SKU', '品名', '品类', '规格', '采购价', '币种', '售价AUD', '履约费率', '补货提前期', '安全库存天数'], master), 'utf8');
 files.push(['04_SKU主数据.csv', master.length + ' 行']);
 
 // ---------- 5. 平台周销售额（W35 / W34） ----------
@@ -112,5 +115,18 @@ fs.writeFileSync(path.join(OUT, '07_广告投放.csv'),
   ]), 'utf8');
 files.push(['07_广告投放.csv', '模板 1 行']);
 
+// ---------- 8. SKU 采购成本（唯一必填项）----------
+// 「8月毛利」算不出来的唯一原因就是这张表是空的。
+// 只留 3 列 —— 填的东西越少，越可能真的被填上。
+const costRows = q('SELECT sku, name, category, cost, cost_currency FROM sku_master ORDER BY category, sku')
+  .map((r) => ({ SKU: r.sku, 品名: r.name || '', 品类: r.category || '', 采购价: r.cost || '' }));
+fs.writeFileSync(path.join(OUT, '08_SKU成本_待填.csv'),
+  csv(['SKU', '品名', '品类', '采购价'], costRows), 'utf8');
+files.push(['08_SKU成本_待填.csv', costRows.length + ' 行 ← 只填这一列']);
+
 console.log('已导出到 multitable/ —— 这些 CSV 可直接导入多维表：\n');
 for (const [f, n] of files) console.log(`  ${f.padEnd(26)} ${n}`);
+console.log(
+  '\n下一步：把 08_SKU成本_待填.csv 的「采购价」填好（RMB 或 AUD 都行，币种在 04 那张表改），\n' +
+  '导回来之后产品定位矩阵就能算出每个 SKU 的毛利和投流安全垫。'
+);
