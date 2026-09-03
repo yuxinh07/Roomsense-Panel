@@ -45,7 +45,7 @@ const DEFAULT_ADS_ALLOC = 'by_revenue'; // 广告费分摊方式：按营收占�
  *              床垫卖 A$419 快递 A$45，占比差 3 倍。一刀切百分比必错。
  *   pct     —— 随售价等比变。售价涨多少，佣金就多扣多少。
  *
- * ⚠ 广告费不在这 7 项里。广告费走「安全垫 = 毛利率 − ACOS」单独算，
+ * ⚠ 广告费不在这 8 项里。广告费走「安全垫 = 毛利率 − ACOS」单独算，
  *   塞进来会被扣两次（一次算毛利、一次算 ACOS），所有产品都会显示投流亏损。
  */
 const FULFIL_ITEMS = [
@@ -53,6 +53,7 @@ const FULFIL_ITEMS = [
   { key: 'ship_unload',    label: '卸货费',       kind: 'perUnit', unit: 'AUD/件' },
   { key: 'handling_inout', label: '入出库处理费', kind: 'perUnit', unit: 'AUD/件' },
   { key: 'ship_last_mile', label: '快递费',       kind: 'perUnit', unit: 'AUD/件' },
+  { key: 'pct_sales',      label: '销售佣金',     kind: 'pct',     unit: '%' },
   { key: 'pct_platform',   label: '平台佣金',     kind: 'pct',     unit: '%' },
   { key: 'pct_payment',    label: '支付手续费',   kind: 'pct',     unit: '%' },
   { key: 'pct_return',     label: '退货损耗',     kind: 'pct',     unit: '%' },
@@ -70,7 +71,7 @@ const FULFIL_ITEMS = [
  *     取值：SKU 的值非 0 就用，否则回落 meta 的值。
  *
  *   'breakdown'（Yitta 要的新模式）
- *     用 FULFIL_ITEMS 那 7 项求和。每项取值优先级：SKU 的值 > meta 同名默认值 > 0。
+ *     用 FULFIL_ITEMS 那 8 项求和。每项取值优先级：SKU 的值 > meta 同名默认值 > 0。
  *     好处：填了哪些就算哪些，能看见钱花在哪一项，涨价时知道该找谁谈。
  *
  * ⚠ breakdown 模式下，没填的项按 0 计入 —— 这会让毛利**被高估**。
@@ -391,7 +392,7 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
       unitCostAud: unitCostAud === null ? null : round2(unitCostAud),
       fulfilPct: round2(fulfilPct),
       fulfilPerUnit: round2(fulfilPerUnit),
-      fulfilItems: rf.items,          // 明细模式下是 7 项的逐项值，前端展开用；pct 模式为空数组
+      fulfilItems: rf.items,          // 明细模式下是 8 项的逐项值，前端展开用；pct 模式为空数组
       fulfilMissing: rf.missing,      // 该 SKU 还缺哪些项（值为 0/空）
       unitFulfil: round2(unitFulfil),
       unitMargin: unitMargin === null ? null : round2(unitMargin),
@@ -417,10 +418,15 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
   return {
     month,
     fulfilMode: mode,
-    fulfilPct: mode === 'breakdown' ? round2(num(meta.pct_platform) + num(meta.pct_payment) + num(meta.pct_return)) : globalFulfil,
+    // 明细模式下这个字段是「全局默认费率之和」，只作展示参考；逐 SKU 的值看每行的 fulfilItems。
+    // 从 FULFIL_ITEMS 推导而不是手写列名 —— 加减明细项时这里不用跟着改。
+    fulfilPct: mode === 'breakdown'
+      ? round2(FULFIL_ITEMS.filter((i) => i.kind === 'pct').reduce((s, i) => s + num(meta[i.key]), 0))
+      : globalFulfil,
     fulfilPctConfirmed: confirmed,
     breakdownConfirmed,
     missingItems,
+    fulfilItemTotal: FULFIL_ITEMS.length,   // 前端告警要显示「N/几项」，别在前端写死数字
     fxAudCny,
     adsTotal: round2(adsTotal),
     adsHasData,
@@ -737,7 +743,7 @@ async function buildDashboard(env) {
     // 明细模式：缺项按 0 计，毛利被高估 —— 点名列出还差哪几项，确认后才静音
     if (!marginData.breakdownConfirmed && marginData.missingItems.length) {
       warnings.push(
-        `成本明细模式：有 ${marginData.missingItems.length}/7 项还是 0（${marginData.missingItems.join('、')}）。` +
+        `成本明细模式：有 ${marginData.missingItems.length}/${FULFIL_ITEMS.length} 项还是 0（${marginData.missingItems.join('、')}）。` +
         `没填的项按 0 计入成本，等于默认它不花钱 —— 毛利会被高估，别拿这个数字做决策。` +
         `补齐后把 meta.fulfil_breakdown_confirmed 设为 1 关掉这条。`
       );
@@ -1042,7 +1048,7 @@ async function upsertSkuMaster(env, records) {
   if (has('fulfil_pct')) extra.push('fulfil_pct');
   if (has('fulfil_per_unit')) extra.push('fulfil_per_unit');
   if (has('lead_time_days')) extra.push('lead_time_days');
-  // 成本明细 7 项。列名和飞书表头都用中文，见 FULFIL_ITEMS 的 label。
+  // 成本明细 8 项。列名和飞书表头都用中文，见 FULFIL_ITEMS 的 label。
   for (const c of FULFIL_ITEMS) if (has(c.key)) extra.push(c.key);
   const all = base.concat(extra);
 
@@ -1072,7 +1078,7 @@ async function upsertSkuMaster(env, records) {
       if (has('fulfil_pct')) vals.push(num(r.fulfil_pct ?? r['履约费率'] ?? 0));
       if (has('fulfil_per_unit')) vals.push(num(r.fulfil_per_unit ?? r['单件履约费'] ?? 0));
       if (has('lead_time_days')) vals.push(num(r.lead_time_days ?? r['补货提前期'] ?? 0));
-      // 成本明细 7 项：优先英文键（CSV/code），其次中文表头（飞书）
+      // 成本明细 8 项：优先英文键（CSV/code），其次中文表头（飞书）
       for (const c of FULFIL_ITEMS) {
         if (!has(c.key)) continue;
         const v = r[c.key] ?? r[c.label];

@@ -4,10 +4,10 @@
  * 跑法：node --experimental-sqlite tools/test_fulfil.mjs
  *
  * 背景：Yitta 2026-09-03 要求「让我填单项，你帮我核算总价」。
- * 原来只有 fulfil_pct / fulfil_per_unit 两个合计值，现在拆成 7 项明细。
+ * 原来只有 fulfil_pct / fulfil_per_unit 两个合计值，现在拆成 8 项明细。
  *
  * 这里重点盯三件容易静默出错的事：
- *   1. 7 项求和算得对不对（按件 4 项相加、百分比 3 项相加，不能串类）
+ *   1. 8 项求和算得对不对（按件 4 项相加、百分比 4 项相加，不能串类）
  *   2. 取值优先级：SKU 的值 > meta 全局默认 > 0 —— 不能反过来被全局值盖掉
  *   3. 未填项必须进 missing 并告警，绝不能静默当 0（否则毛利被高估还看不出来）
  */
@@ -48,14 +48,14 @@ function seedOne(db, skuVals = {}) {
 const { buildMargin } = await import('../src/worker.js');
 
 /* ============================================================
- * 1. 7 项求和：按件 4 项、百分比 3 项，不能串类
+ * 1. 8 项求和：按件 4 项、百分比 4 项，不能串类
  * ========================================================== */
 console.log('\n===== 1. 明细求和 =====');
 {
   const db = freshDb();
   seedOne(db, {
     ship_first_leg: 18, ship_unload: 4, handling_inout: 9, ship_last_mile: 45,
-    pct_platform: 12, pct_payment: 1.75, pct_return: 3,
+    pct_sales: 5, pct_platform: 12, pct_payment: 1.75, pct_return: 3,
   });
   setMeta(db, 'fulfil_mode', 'breakdown');
   const m = buildMargin(db.prepare('SELECT * FROM sales_orders').all(), db.prepare('SELECT * FROM sku_master').all(), [], metaOf(db), { month: '2026-08' });
@@ -63,12 +63,14 @@ console.log('\n===== 1. 明细求和 =====');
 
   ok(m.fulfilMode === 'breakdown', '模式切到 breakdown');
   ok(near(r.fulfilPerUnit, 76), '按件合计 = 18+4+9+45 = 76', `实得 ${r.fulfilPerUnit}`);
-  ok(near(r.fulfilPct, 16.75), '费率合计 = 12+1.75+3 = 16.75%', `实得 ${r.fulfilPct}`);
-  ok(near(r.unitFulfil, 143), '单件履约 = 400×16.75% + 76 = 143', `实得 ${r.unitFulfil}`);
+  ok(near(r.fulfilPct, 21.75), '费率合计 = 5+12+1.75+3 = 21.75%', `实得 ${r.fulfilPct}`);
+  ok(near(r.unitFulfil, 163), '单件履约 = 400×21.75% + 76 = 163', `实得 ${r.unitFulfil}`);
   ok(near(r.unitCostAud, 187.5), '采购成本 = 900RMB ÷ 4.8 = 187.5', `实得 ${r.unitCostAud}`);
-  ok(near(r.unitMargin, 69.5), '单件毛利 = 400 − 187.5 − 143 = 69.5', `实得 ${r.unitMargin}`);
-  ok(near(r.marginPct, 17.38), '毛利率 = 69.5 / 400 = 17.38%', `实得 ${r.marginPct}`);
-  ok(r.fulfilItems.length === 7, '明细返回 7 项', `实得 ${r.fulfilItems.length}`);
+  ok(near(r.unitMargin, 49.5), '单件毛利 = 400 − 187.5 − 163 = 49.5', `实得 ${r.unitMargin}`);
+  ok(near(r.marginPct, 12.38), '毛利率 = 49.5 / 400 = 12.38%', `实得 ${r.marginPct}`);
+  ok(r.fulfilItems.length === 8, '明细返回 8 项', `实得 ${r.fulfilItems.length}`);
+  ok(r.fulfilItems.some((i) => i.key === 'pct_sales' && near(i.value, 5)),
+    '销售佣金算进费率小计（不是漏项）', JSON.stringify(r.fulfilItems.filter((i) => i.kind === 'pct')));
   ok(m.missingItems.length === 0, '全部填齐时无缺项');
 }
 
@@ -103,15 +105,16 @@ console.log('\n===== 2. 取值优先级 =====');
 console.log('\n===== 3. 未填项不静默 =====');
 {
   const db = freshDb();
-  seedOne(db, { ship_last_mile: 45, pct_platform: 12 }); // 只填 2 项，其余 5 项空
+  seedOne(db, { ship_last_mile: 45, pct_platform: 12 }); // 只填 2 项，其余 6 项空
   setMeta(db, 'fulfil_mode', 'breakdown');
   const m = buildMargin(db.prepare('SELECT * FROM sales_orders').all(), db.prepare('SELECT * FROM sku_master').all(), [], metaOf(db), { month: '2026-08' });
   const r = m.rows[0];
 
-  ok(m.missingItems.length === 5, '5 项未填 → missing 记 5 项', `实得 ${m.missingItems.length}`);
+  ok(m.missingItems.length === 6, '6 项未填 → missing 记 6 项', `实得 ${m.missingItems.length}`);
   ok(m.missingItems.includes('头程运费') && m.missingItems.includes('退货损耗'), '点名到具体项（头程运费、退货损耗）', m.missingItems.join('、'));
+  ok(m.missingItems.includes('销售佣金'), '没填的销售佣金也点名（不会因为它新加就漏掉）', m.missingItems.join('、'));
   ok(!m.missingItems.includes('快递费') && !m.missingItems.includes('平台佣金'), '已填的项不进 missing');
-  ok(r.fulfilMissing.length === 5, 'SKU 行级也带 missing，前端可逐行提示');
+  ok(r.fulfilMissing.length === 6, 'SKU 行级也带 missing，前端可逐行提示');
 
   // 未确认 → 告警；确认后 → 静音
   ok(m.breakdownConfirmed === false, '默认未确认（告警会出）');
@@ -141,7 +144,8 @@ console.log('\n===== 4. 向后兼容（默认 pct 模式）=====');
   setMeta(db2, 'fulfil_mode', 'breakdown');
   const m2 = buildMargin(db2.prepare('SELECT * FROM sales_orders').all(), db2.prepare('SELECT * FROM sku_master').all(), [], metaOf(db2), { month: '2026-08' });
   ok(m2.rows[0].unitFulfil === 0, '明细全空 → 履约成本 0');
-  ok(m2.missingItems.length === 7, '7 项全缺 → 全部点名告警（不会静默给个好看的毛利）', `实得 ${m2.missingItems.length}`);
+  ok(m2.missingItems.length === 8, '8 项全缺 → 全部点名告警（不会静默给个好看的毛利）', `实得 ${m2.missingItems.length}`);
+  ok(m2.fulfilItemTotal === 8, '返回给前端的总项数是 8（告警分母，别在前端写死）', `实得 ${m2.fulfilItemTotal}`);
 }
 
 /* ============================================================
@@ -177,7 +181,7 @@ console.log('\n===== 5. 飞书中文列名映射 =====');
       SKU: 'XFKF-MA-1666-34-Q', 品名: '1666 34cm Queen', 品类: ['Mattress'], 规格: '1666 34cm Queen',
       采购价: 900, 币种: 'RMB', 售价AUD: 400.97,
       头程运费: 18, 卸货费: 4, 入出库处理费: 9, 快递费: 45,
-      平台佣金: 12, 支付手续费: 1.75, 退货损耗: 3,
+      销售佣金: 5, 平台佣金: 12, 支付手续费: 1.75, 退货损耗: 3,
       补货提前期: 45, 安全库存天数: 21,
     }),
     flattenFeishuFields({
@@ -195,7 +199,8 @@ console.log('\n===== 5. 飞书中文列名映射 =====');
   ok(!!a && !!b, '两条记录都进了库');
   ok(a.ship_first_leg === 18 && a.ship_unload === 4 && a.handling_inout === 9, '按件 4 项按中文列名落库', `${a.ship_first_leg}/${a.ship_unload}/${a.handling_inout}`);
   ok(a.ship_last_mile === 45, '快递费 45 落库', `${a.ship_last_mile}`);
-  ok(a.pct_platform === 12 && a.pct_payment === 1.75 && a.pct_return === 3, '百分比 3 项落库', `${a.pct_platform}/${a.pct_payment}/${a.pct_return}`);
+  ok(a.pct_sales === 5, '销售佣金按中文列名落库', `${a.pct_sales}`);
+  ok(a.pct_platform === 12 && a.pct_payment === 1.75 && a.pct_return === 3, '百分比其余 3 项落库', `${a.pct_platform}/${a.pct_payment}/${a.pct_return}`);
   ok(near(a.price_aud, 400.97) && near(a.cost, 900), '原有列不受影响（售价/采购价）');
 
   ok(b.ship_last_mile === 12, '枕头快递费 12 落库（小件不被大件费率套用）', `${b.ship_last_mile}`);

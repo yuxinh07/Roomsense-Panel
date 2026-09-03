@@ -1,17 +1,17 @@
-﻿SKU,品名,品类,规格,采购价,币种,售价AUD,履约费率,单件履约费,头程运费,卸货费,入出库处理费,快递费,平台佣金,支付手续费,退货损耗,补货提前期,安全库存天数
-XFKF-PL-1167F-WH,1167F White,枕头,1167F White,,RMB,15.42,,,,,,,,,,,21
-XFKF-PL-1168R-WH,1168R White,枕头,1168R White,,RMB,30.87,,,,,,,,,,,21
-XFKF-PL-1169R-WH,1169R White,枕头,1169R White,,RMB,,,,,,,,,,,,21
-XFKF-MA-1666-34-D,1666 34cm Double,床垫,1666 34cm Double,,RMB,323.79,,,,,,,,,,,21
-XFKF-MA-1666-34-KS,1666 34cm King Single,床垫,1666 34cm King Single,,RMB,,,,,,,,,,,,21
-XFKF-MA-1666-34-Q,1666 34cm Queen,床垫,1666 34cm Queen,,RMB,400.97,,,,,,,,,,,21
-XFKF-MA-1666-34-S,1666 34cm Single,床垫,1666 34cm Single,,RMB,251.55,,,,,,,,,,,21
-XFKF-MA-1667-30-D,1667 30cm Double,床垫,1667 30cm Double,,RMB,270.23,,,,,,,,,,,21
-XFKF-MA-1667-30-K,1667 30cm King,床垫,1667 30cm King,,RMB,336.27,,,,,,,,,,,21
-XFKF-MA-1667-30-KS,1667 30cm King Single,床垫,1667 30cm King Single,,RMB,214.93,,,,,,,,,,,21
-XFKF-MA-1667-30-Q,1667 30cm Queen,床垫,1667 30cm Queen,,RMB,223.49,,,,,,,,,,,21
-XFKF-MA-1667-30-S,1667 30cm Single,床垫,1667 30cm Single,,RMB,220.97,,,,,,,,,,,21
-XFKF-MA-1772-26-D,1772 26cm Double,床垫,1772 26cm Double,,RMB,219.27,,,,,,,,,,,21
-XFKF-MA-1772-26-KS,1772 26cm King Single,床垫,1772 26cm King Single,,RMB,141.43,,,,,,,,,,,21
-XFKF-MA-1772-26-Q,1772 26cm Queen,床垫,1772 26cm Queen,,RMB,242.25,,,,,,,,,,,21
-XFKF-MA-1772-26-S,1772 26cm Single,床垫,1772 26cm Single,,RMB,148.37,,,,,,,,,,,21
+﻿SKU,品名,品类,规格,采购价,币种,售价AUD,履约费率,单件履约费,头程运费,卸货费,入出库处理费,快递费,销售佣金,平台佣金,支付手续费,退货损耗,补货提前期,安全库存天数
+XFKF-PL-1167F-WH,1167F White,枕头,1167F White,,RMB,15.42,,,,,,,,,,,,21
+XFKF-PL-1168R-WH,1168R White,枕头,1168R White,,RMB,30.87,,,,,,,,,,,,21
+XFKF-PL-1169R-WH,1169R White,枕头,1169R White,,RMB,,,,,,,,,,,,,21
+XFKF-MA-1666-34-D,1666 34cm Double,床垫,1666 34cm Double,,RMB,323.79,,,,,,,,,,,,21
+XFKF-MA-1666-34-KS,1666 34cm King Single,床垫,1666 34cm King Single,,RMB,,,,,,,,,,,,,21
+XFKF-MA-1666-34-Q,1666 34cm Queen,床垫,1666 34cm Queen,,RMB,400.97,,,,,,,,,,,,21
+XFKF-MA-1666-34-S,1666 34cm Single,床垫,1666 34cm Single,,RMB,251.55,,,,,,,,,,,,21
+XFKF-MA-1667-30-D,1667 30cm Double,床垫,1667 30cm Double,,RMB,270.23,,,,,,,,,,,,21
+XFKF-MA-1667-30-K,1667 30cm King,床垫,1667 30cm King,,RMB,336.27,,,,,,,,,,,,21
+XFKF-MA-1667-30-KS,1667 30cm King Single,床垫,1667 30cm King Single,,RMB,214.93,,,,,,,,,,,,21
+XFKF-MA-1667-30-Q,1667 30cm Queen,床垫,1667 30cm Queen,,RMB,223.49,,,,,,,,,,,,21
+XFKF-MA-1667-30-S,1667 30cm Single,床垫,1667 30cm Single,,RMB,220.97,,,,,,,,,,,,21
+XFKF-MA-1772-26-D,1772 26cm Double,床垫,1772 26cm Double,,RMB,219.27,,,,,,,,,,,,21
+XFKF-MA-1772-26-KS,1772 26cm King Single,床垫,1772 26cm King Single,,RMB,141.43,,,,,,,,,,,,21
+XFKF-MA-1772-26-Q,1772 26cm Queen,床垫,1772 26cm Queen,,RMB,242.25,,,,,,,,,,,,21
+XFKF-MA-1772-26-S,1772 26cm Single,床垫,1772 26cm Single,,RMB,148.37,,,,,,,,,,,,21

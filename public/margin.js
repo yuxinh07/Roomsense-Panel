@@ -135,8 +135,12 @@
     if (m.fulfilMode === 'breakdown') {
       // 明细模式：缺项按 0 计 = 毛利被高估，必须点名，不能只说「有缺项」
       if (!m.breakdownConfirmed && m.missingItems && m.missingItems.length) {
+        // 分母从后端给的 fulfilItemTotal 来，明细项增减时前端不用跟着改。
+        // 拿不到总数就只报缺了几项，不要写「N/N」——那会让人误以为全填齐了。
         caveats.push(
-          '成本明细还有 ' + m.missingItems.length + '/7 项是 0（' + m.missingItems.join('、') + '）。'
+          '成本明细还有 '
+          + (m.fulfilItemTotal ? m.missingItems.length + '/' + m.fulfilItemTotal + ' 项' : m.missingItems.length + ' 项')
+          + '是 0（' + m.missingItems.join('、') + '）。'
           + '没填的项按 0 计入成本，等于默认它不花钱 —— 毛利被高估，别拿这个数字做决策。'
         );
       }

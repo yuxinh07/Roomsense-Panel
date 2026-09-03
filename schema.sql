@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS sku_master (
   -- ↓ 成本明细（Yitta 2026-09-03 要求：能一项一项填，系统自动算合计）
   --   取数优先级：本行的值 > meta 同名默认值 > 0
   --
-  --   ⚠ 这 7 列刻意不写 DEFAULT 0，默认就是 NULL。
+  --   ⚠ 这 8 列刻意不写 DEFAULT 0，默认就是 NULL。
   --     NULL = 没填（回落到 meta 的全局默认值）；0 = 填了，且这项真的不花钱。
   --     写成 DEFAULT 0 的话两者没法区分，SKU 的空值会把 meta 的默认值盖成 0 ——
   --     测试 test_fulfil.mjs 第 2 节就是抓这个 bug 的：枕头没填快递费，
@@ -59,11 +59,15 @@ CREATE TABLE IF NOT EXISTS sku_master (
   --
   --   ⚠ 明细模式下，没填且 meta 也没配的项按 0 计入 —— 会让毛利被高估，
   --     所以会在 warnings 里点名列出缺哪些，绝不静默。
+  --
+  --   ⚠ 加减明细项时，列的增删、meta 默认值、飞书表头三处要一起改，
+  --     改完跑 tools/test_fulfil.mjs（第 1 节会断言项数）。
   ship_first_leg REAL,                  -- 【按件】头程运费 AUD/件（中国→澳洲，海运或空运摊到每件）
   ship_unload    REAL,                  -- 【按件】卸货费 AUD/件（到港卸柜、搬入仓）
   handling_inout REAL,                  -- 【按件】入出库处理费 AUD/件（拣货、打包、贴标）
   ship_last_mile REAL,                  -- 【按件】快递费 AUD/件
                                         -- ⚠ 大件（床垫）和小件（枕头）这项差最多，务必分开填
+  pct_sales      REAL,                  -- 【按售价%】销售佣金（给渠道/分销/业务员的提成，与平台抽成是两笔钱）
   pct_platform   REAL,                  -- 【按售价%】平台佣金（Bunnings / Amazon / Kmart / Temu / Ebay / Dropshipzone 各自不同）
   pct_payment    REAL,                  -- 【按售价%】支付手续费（PayPal / 信用卡 / Afterpay 等）
   pct_return     REAL,                  -- 【按售价%】退货损耗（退货率 × 单件损失，摊成百分比）
@@ -159,17 +163,18 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
 
   -- ↓ 成本明细模式（Yitta 2026-09-03 要求：一项一项填，系统算合计）
   --   'pct'       = 用上面的 fulfil_pct / fulfil_per_unit 合计值（当前默认，老行为）
-  --   'breakdown' = 用下面 7 项明细求和。填了哪些算哪些，没填的按 0 且会在告警里点名
+  --   'breakdown' = 用下面 8 项明细求和。填了哪些算哪些，没填的按 0 且会在告警里点名
   ('fulfil_mode', 'pct'),
   ('fulfil_breakdown_confirmed', '0'),  -- 1 = 已逐项核对过明细（缺项告警消失）
                                         -- 明细模式下为 0 的项按 0 计入，毛利被高估 ——
                                         -- 所以确认前一直告警，确认后才静音
-  -- 下面 7 项是【全局默认值】，SKU 表里填了就用 SKU 的，没填就回落这里。
+  -- 下面 8 项是【全局默认值】，SKU 表里填了就用 SKU 的，没填就回落这里。
   -- 全留空 = 全部按 0，会告警。所以要么在 SKU 表逐项填，要么在这里填一个通用值。
   ('ship_first_leg', ''),             -- 【按件】头程运费 AUD/件
   ('ship_unload', ''),                -- 【按件】卸货费 AUD/件
   ('handling_inout', ''),             -- 【按件】入出库处理费 AUD/件
   ('ship_last_mile', ''),             -- 【按件】快递/尾程配送 AUD/件（大件小件差别最大的一项）
+  ('pct_sales', ''),                  -- 【按售价%】销售佣金（渠道/分销提成，跟平台佣金不是一回事）
   ('pct_platform', ''),               -- 【按售价%】平台佣金
   ('pct_payment', ''),                -- 【按售价%】支付手续费
   ('pct_return', ''),                 -- 【按售价%】退货损耗
@@ -193,4 +198,14 @@ INSERT OR IGNORE INTO meta(key, value) VALUES
 --   ALTER TABLE sku_master    ADD COLUMN price_aud  REAL DEFAULT 0;
 --   ALTER TABLE sku_master    ADD COLUMN fulfil_pct REAL DEFAULT 0;
 --   ALTER TABLE sku_master    ADD COLUMN fulfil_per_unit REAL DEFAULT 0;
+--
+--   成本明细 8 项（2026-09-03 新增；这里不要写 DEFAULT 0，理由见建表那段注释）：
+--   ALTER TABLE sku_master ADD COLUMN ship_first_leg REAL;
+--   ALTER TABLE sku_master ADD COLUMN ship_unload    REAL;
+--   ALTER TABLE sku_master ADD COLUMN handling_inout REAL;
+--   ALTER TABLE sku_master ADD COLUMN ship_last_mile REAL;
+--   ALTER TABLE sku_master ADD COLUMN pct_sales      REAL;
+--   ALTER TABLE sku_master ADD COLUMN pct_platform   REAL;
+--   ALTER TABLE sku_master ADD COLUMN pct_payment    REAL;
+--   ALTER TABLE sku_master ADD COLUMN pct_return     REAL;
 -- ───────────────────────────────────────────────────────
