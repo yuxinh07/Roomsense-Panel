@@ -9,6 +9,9 @@ node_modules/
 # 飞书凭证（真实值，绝不提交）
 tools/.env.feishu
 
+# Cloudflare 凭证（API Token，绝不提交）
+tools/.env.cloudflare
+
 # 系统/日志
 .DS_Store
 *.log

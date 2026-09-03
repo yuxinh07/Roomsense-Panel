@@ -17,6 +17,17 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
+# 系统没单独装 Node 的话，npx 在 WorkBuddy 的目录里，终端默认找不到。
+# 这里自己补上，免得报 "npx: command not found" 还得先去配 shell。
+WB_NODE="$HOME/.workbuddy-ai/binaries/node/versions/22.22.2/bin"
+[ -d "$WB_NODE" ] && export PATH="$WB_NODE:$PATH"
+if ! command -v npx >/dev/null 2>&1; then
+  echo "✗ 找不到 npx（Node 命令）。"
+  echo "  要么去 https://nodejs.org/ 装一个，要么先跑："
+  echo "    export PATH=\"\$HOME/.workbuddy-ai/binaries/node/versions/22.22.2/bin:\$PATH\""
+  exit 1
+fi
+
 # 自动加载 .env.feishu（如果存在），这样命令行不用拼一长串
 if [ -f tools/.env.feishu ]; then
   set -a
