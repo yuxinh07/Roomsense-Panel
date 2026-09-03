@@ -45,7 +45,7 @@ function seedOne(db, skuVals = {}) {
   setMeta(db, 'fx_aud_cny', 4.8); // 900 RMB ÷ 4.8 = A$187.5
 }
 
-const { buildMargin } = await import('../src/worker.js');
+const { buildMargin, pickBestSkuRows } = await import('../src/worker.js');
 
 /* ============================================================
  * 1. 8 项求和：按件 4 项、百分比 4 项，不能串类
@@ -213,6 +213,89 @@ console.log('\n===== 5. 飞书中文列名映射 =====');
   const m = buildMargin([], db.prepare('SELECT * FROM sku_master').all(), [], metaOf(db), { month: '2026-08' });
   const pillow = m.rows.find((r) => r.sku === 'XFKF-PL-1167F-WH');
   ok(near(pillow.fulfilPerUnit, 18), '枕头按件成本 = 快递12 + 头程6(来自meta) = 18', `实得 ${pillow?.fulfilPerUnit}`);
+}
+
+/* ============================================================
+ * 6. 飞书空行 / 重复行去重
+ *
+ * 2026-09-03 在 Yitta 真实飞书表上发现：SKU 主数据 17 行里有 1 行重复、
+ * 1 行只有 SKU 其余全空、1 行连 SKU 都没有。
+ * 那个「只有 SKU」的空行会 UPSERT 覆盖同 SKU 的真实数据 —— 采购价变 0，
+ * 毛利直接算不出来，而且不报错。所以入库前必须先挑行。
+ * ========================================================== */
+console.log('\n===== 6. 飞书空行/重复行去重 =====');
+{
+  const hasAll = () => true;      // 库里有全部明细列
+  const hasNone = () => false;    // 老库：明细列一个都没有
+  const skus = (rs) => rs.map((r) => r.SKU || r.sku);
+
+  // 6.1 空行不能覆盖好数据（真实事故：XFKF-PL-1169R-WH 第 16 行全空）
+  {
+    const rows = pickBestSkuRows(
+      [{ SKU: 'A', 采购价: 186.64, 品类: 'Pillow' }, { SKU: 'A' }],
+      hasAll
+    );
+    ok(rows.length === 1, '同 SKU 只留一行', `实得 ${rows.length} 行`);
+    ok(rows[0].采购价 === 186.64, '空行没覆盖掉真实采购价', `实得 ${rows[0].采购价}`);
+  }
+
+  // 6.2 只有 SKU 的行直接丢掉
+  {
+    const rows = pickBestSkuRows([{ SKU: 'B' }, { SKU: 'C', 品名: '有值' }], hasAll);
+    ok(skus(rows).join() === 'C', '只有 SKU 的行被丢弃', `实得 ${JSON.stringify(skus(rows))}`);
+  }
+
+  // 6.3 连 SKU 都没有的行丢掉（飞书表末尾常有）
+  {
+    const rows = pickBestSkuRows([{ 品名: '没SKU' }, { SKU: 'D', 采购价: 5 }], hasAll);
+    ok(skus(rows).join() === 'D', '无 SKU 行被丢弃', `实得 ${JSON.stringify(skus(rows))}`);
+  }
+
+  // 6.4 重复行取填得最全的那行（不看顺序）
+  {
+    const rows = pickBestSkuRows(
+      [
+        { SKU: 'E', 采购价: 1 },
+        { SKU: 'E', 采购价: 2, 头程运费: 3, 快递费: 4, 平台佣金: 5 },
+        { SKU: 'E', 采购价: 9, 头程运费: 8 },
+      ],
+      hasAll
+    );
+    ok(rows.length === 1 && rows[0].采购价 === 2, '取填得最全的那行（不是最后一行）', `实得 ${rows[0]?.采购价}`);
+  }
+
+  // 6.5 填得一样多时取后者 —— 跟以前「后面覆盖前面」的行为保持一致
+  {
+    const rows = pickBestSkuRows([{ SKU: 'F', 采购价: 1 }, { SKU: 'F', 采购价: 2 }], hasAll);
+    ok(rows.length === 1 && rows[0].采购价 === 2, '分数相同取后出现的一行', `实得 ${rows[0]?.采购价}`);
+  }
+
+  // 6.6 英文列名（CSV 路径）也要能计分
+  {
+    const rows = pickBestSkuRows([{ sku: 'G', cost: 10 }, { sku: 'G' }], hasAll);
+    ok(rows.length === 1 && rows[0].cost === 10, '英文列名同样生效', `实得 ${JSON.stringify(rows)}`);
+  }
+
+  // 6.7 老库没有明细列时，明细不算分，但基础列照常挑
+  {
+    const rows = pickBestSkuRows([{ SKU: 'H' }, { SKU: 'H', 采购价: 7 }], hasNone);
+    ok(rows.length === 1 && rows[0].采购价 === 7, '老库（无明细列）仍能正确去重', `实得 ${JSON.stringify(rows)}`);
+  }
+
+  // 6.8 端到端：用 Yitta 飞书表里那段真实数据的形状跑一遍
+  {
+    const real = [
+      { SKU: 'XFKF-PL-1169R-WH', 采购价: 186.64, 品类: 'Pillow', 头程运费: 22.5, 快递费: 208.12 },
+      { SKU: 'XFKF-MA-1772-26-S', 采购价: 200.81, 头程运费: 48.8, 快递费: 90.49 },
+      { SKU: 'XFKF-MA-1772-26-S', 采购价: 200.81, 头程运费: 48.8, 快递费: 90.49 }, // 重复行
+      { SKU: 'XFKF-PL-1169R-WH', 币种: 'RMB' },                                    // 空行
+      {},                                                                          // 连 SKU 都没有
+    ];
+    const rows = pickBestSkuRows(real, hasAll);
+    ok(rows.length === 2, '17 行里的脏数据清完后剩 2 个 SKU', `实得 ${rows.length} 行`);
+    const pillow = rows.find((r) => r.SKU === 'XFKF-PL-1169R-WH');
+    ok(!!pillow && pillow.采购价 === 186.64, '枕头的真实采购价保住了', `实得 ${pillow?.采购价}`);
+  }
 }
 
 console.log(`\n===== 结果：${pass} 通过 / ${fail} 失败 =====\n`);

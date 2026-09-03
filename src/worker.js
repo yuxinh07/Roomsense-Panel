@@ -1036,6 +1036,54 @@ async function upsertInventory(env, records, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN
   return { ok: true, upserted: rows.length, snapshotDate: snapDate };
 }
 
+/**
+ * 同一 SKU 只保留「填得最全」的那行。
+ *
+ * 飞书是给人用的表，重复行和空白行都很常见，两种都会静默毁数据：
+ *   - 空白行（只有 SKU、其余全空）：UPSERT 会把同 SKU 的真实数据覆盖成 0，
+ *     采购价变 0 → 毛利算不出来，而且不报错，只能靠眼睛发现。
+ *   - 重复行：哪行生效取决于飞书返回顺序，数字会莫名抖动。
+ *
+ * 所以按 SKU 分组后取非空字段最多的那行；一行字段全空的直接丢掉。
+ * 分数相同（两行填得一样多）取后出现的，跟以前「后面覆盖前面」的行为一致。
+ *
+ * 只看真正影响钱和展示的字段：币种有默认值 'RMB'、safety_days 有默认 21，
+ * 拿它们计分会让「只填了币种」的空行也拿高分。
+ *
+ * @param {Array<object>} records 飞书原始行（key 可能是英文列名或中文表头）
+ * @param {(c: string) => boolean} has 该列在库里是否存在（老库可能没有明细列）
+ */
+export function pickBestSkuRows(records, has) {
+  const fields = [
+    ['name', '品名'],
+    ['category', '品类'],
+    ['spec', '规格'],
+    ['cost', '采购价'],
+    ['price_aud', '售价AUD'],
+    ['fulfil_pct', '履约费率'],
+    ['fulfil_per_unit', '单件履约费'],
+  ];
+  // 成本明细 8 项：老库没有这些列时不参与计分，否则空行永远 0 分、有值行也 0 分
+  for (const c of FULFIL_ITEMS) if (has(c.key)) fields.push([c.key, c.label]);
+
+  const score = (r) =>
+    fields.reduce((n, [k, cn]) => {
+      const v = r[k] ?? r[cn];
+      return v === undefined || v === null || v === '' ? n : n + 1;
+    }, 0);
+
+  const best = new Map();
+  for (const r of records) {
+    const sku = r.sku || r['SKU'];
+    if (!sku) continue; // 连 SKU 都没有 → 整行没法入库
+    const s = score(r);
+    if (s === 0) continue; // 只有 SKU、其余全空 → 会覆盖好数据，丢掉
+    const prev = best.get(sku);
+    if (!prev || s >= prev.s) best.set(sku, { s, r });
+  }
+  return Array.from(best.values(), (x) => x.r);
+}
+
 async function upsertSkuMaster(env, records) {
   // price_aud / fulfil_pct / lead_time_days 是后加的列，老库可能没有。
   // 逐列探测，缺哪列就退化成不含该列的 SQL —— 保证老库导入不炸。
@@ -1061,8 +1109,9 @@ async function upsertSkuMaster(env, records) {
       .join(', ');
 
   const stmt = env.DB.prepare(sql);
-  const batch = records
-    .filter((r) => r.sku || r['SKU'])
+  // 先去重再入库：飞书里的空行会覆盖好数据，见 pickBestSkuRows。
+  const picked = pickBestSkuRows(records, has);
+  const batch = picked
     .map((r) => {
       const vals = [
         r.sku || r['SKU'],
@@ -1086,9 +1135,15 @@ async function upsertSkuMaster(env, records) {
       }
       return stmt.bind(...vals);
     });
-  if (!batch.length) return { ok: true, upserted: 0 };
+  if (!batch.length) return { ok: true, upserted: 0, skipped: records.length };
   await env.DB.batch(batch);
-  return { ok: true, upserted: batch.length, columns: all.length };
+  // skipped 让同步日志能看出来丢了多少行 —— 数字突然变大说明飞书表里多了空行或重复行
+  return {
+    ok: true,
+    upserted: batch.length,
+    skipped: records.length - batch.length,
+    columns: all.length,
+  };
 }
 
 async function insertAds(env, records, metaIn) {
