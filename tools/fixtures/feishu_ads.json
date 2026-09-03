@@ -1,0 +1,45 @@
+{
+ "code": 0,
+ "msg": "ok",
+ "data": {
+  "has_more": false,
+  "page_token": "",
+  "total": 3,
+  "items": [
+   {
+    "record_id": "rec_ad_0",
+    "fields": {
+     "平台": "Amazon Marketplace",
+     "广告活动": "XFKF-MA-1666-34-Q (Auto)",
+     "花费": 120.5,
+     "广告销售额": 1602.0,
+     "订单数": 8,
+     "日期": 1787500800000
+    }
+   },
+   {
+    "record_id": "rec_ad_1",
+    "fields": {
+     "平台": "Amazon Marketplace",
+     "广告活动": "XFKF-MA-1667-30-K (Manual)",
+     "花费": 80.0,
+     "广告销售额": 980.0,
+     "订单数": 4,
+     "周次": "W34"
+    }
+   },
+   {
+    "record_id": "rec_ad_2",
+    "fields": {
+     "平台": "Bunnings",
+     "广告活动": "XFKF-MA-1772-26-D (Auto)",
+     "花费": 60.0,
+     "广告销售额": 700.0,
+     "订单数": 3,
+     "日期": 1787328000000,
+     "周次": "W35"
+    }
+   }
+  ]
+ }
+}

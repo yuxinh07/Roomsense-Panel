@@ -34,11 +34,55 @@ const env = {
 };
 
 // 期望的列名（Worker 认的中文列名）
+/**
+ * 期望的列名（Worker 认的中文列名）
+ *
+ * 必填缺了会读不出数据，可选缺了只是少个维度。
+ * 2026-09-03 按 Yitta 飞书里实际建好的 4 张表校正：
+ *   - 销售明细「销售额」早就拆成「商品销售额」+「邮费收入」了
+ *   - 库存补「快照日期」（没有它，快照日期会恒等于同步当天）
+ *   - 广告补「日期」（和「周次」二选一，两个都缺 → 这行不进 ACOS）
+ *   - SKU主数据补「售价AUD / 履约费率 / 单件履约费 / 补货提前期」
+ * ⚠️ 列名对了还不够，类型也得对：采购价建成「文本」类型的话 num() 一律变 0，
+ *    毛利全废且不报错。类型检查靠 npm run test:feishu（用真实表数据跑同步）。
+ */
 const EXPECT = {
-  销售明细: ['订单日期', '平台', '订单号', 'SKU', '品类', '销量', '销售额'],
-  库存: ['SKU', '品类', '现有库存', '在途', '安全库存', '预计到货'],
-  广告投放: ['周次', '平台', '广告活动', '花费', '广告销售额', '订单数'],
-  SKU主数据: ['SKU', '品名', '品类', '规格', '采购价', '币种', '安全库存天数'],
+  销售明细: {
+    required: ['订单日期', '平台', 'SKU', '品类', '销量', '商品销售额', '邮费收入', '币种', '汇率'],
+    optional: ['订单号'],
+  },
+  库存: {
+    required: ['SKU', '品类', '现有库存', '在途', '安全库存'],
+    optional: ['快照日期', '预计到货'],
+  },
+  广告投放: {
+    required: ['平台', '广告活动', '花费', '广告销售额', '订单数'],
+    // 日期和周次至少要有一个，否则整行不参与毛利/ACOS
+    optional: ['日期', '周次'],
+  },
+  SKU主数据: {
+    required: ['SKU', '品类', '采购价', '币种'],
+    optional: ['品名', '规格', '售价AUD', '履约费率', '单件履约费', '补货提前期', '安全库存天数'],
+  },
+};
+
+/**
+ * 必须是【数字】类型的列（飞书 field type = 2）
+ * 这些列建成文本的话，num() 会把空串和非数字静默转成 0，看板照出图、不报错。
+ */
+const NUMERIC_COLS = {
+  销售明细: ['销量', '商品销售额', '邮费收入', '汇率'],
+  库存: ['现有库存', '在途', '安全库存'],
+  广告投放: ['花费', '广告销售额', '订单数'],
+  SKU主数据: ['采购价', '售价AUD', '履约费率', '单件履约费', '补货提前期', '安全库存天数'],
+};
+
+/** 必须是【日期】类型的列（飞书 field type = 5；文本 type=1 也能解析，只是不稳） */
+const DATE_COLS = {
+  销售明细: ['订单日期'],
+  库存: ['快照日期', '预计到货'],
+  广告投放: ['日期'],
+  SKU主数据: [],
 };
 
 const C = {
@@ -155,34 +199,83 @@ async function main() {
   const hasMore = rj.data?.has_more;
   console.log(C.ok(`能读到记录（本页 ${items.length} 条${hasMore ? '，后面还有' : ''}）`));
 
-  if (!items.length) {
+  // 字段名要走接口拿，不能靠记录的 fields key 反推 ——
+  // 飞书的记录里，空值单元格【根本不出现这个 key】。第一行「安全库存」是空的，
+  // 就会被误判成「表里没有这一列」。这个坑害人不浅，别走捷径。
+  const fj = await get(`/tables/${target.table_id}/fields?page_size=200`);
+  const fieldList = fj.code === 0 ? fj.data?.items || [] : [];
+  const fieldType = {};
+  for (const f of fieldList) fieldType[f.field_name || f.name] = f.type;
+
+  if (!fieldList.length) {
+    console.log(C.warn('\n   读不到字段定义，退回用第一行记录推断列名（可能误报缺列）'));
+  }
+
+  if (!fieldList.length && !items.length) {
     console.log(C.warn('表是空的 —— 字段名校验跳过'));
     console.log(C.dim('   贴上数据后再跑一次，会校验列名。'));
   } else {
-    // 从 fields 的 key 推断列名
-    const cols = Object.keys(items[0].fields || {});
+    const cols = fieldList.length
+      ? fieldList.map((f) => f.field_name || f.name)
+      : Object.keys(items[0].fields || {});
     console.log(C.dim('\n   实际列名：' + cols.join(' | ')));
 
-    // 猜这张表是哪一类
+    // 猜这张表是哪一类：按「必填列命中数」打分，同分时再算可选列
     let matched = null;
-    let bestHit = 0;
-    for (const [kind, expect] of Object.entries(EXPECT)) {
-      const hit = expect.filter((c) => cols.includes(c)).length;
-      if (hit > bestHit) { bestHit = hit; matched = kind; }
+    let bestScore = -1;
+    for (const [kind, spec] of Object.entries(EXPECT)) {
+      const req = spec.required.filter((c) => cols.includes(c)).length;
+      const opt = spec.optional.filter((c) => cols.includes(c)).length;
+      const score = req * 10 + opt;
+      if (score > bestScore) { bestScore = score; matched = kind; }
     }
 
-    if (!matched || bestHit < 3) {
-      console.log(C.warn('   没认出这张表是哪一类（至少要匹配上 3 个列名）'));
+    if (!matched || bestScore < 30) {
+      console.log(C.warn('   没认出这张表是哪一类（至少要匹配上 3 个必填列名）'));
     } else {
-      const expect = EXPECT[matched];
-      const missing = expect.filter((c) => !cols.includes(c));
+      const spec = EXPECT[matched];
+      const missingReq = spec.required.filter((c) => !cols.includes(c));
+      const missingOpt = spec.optional.filter((c) => !cols.includes(c));
       console.log(C.dim(`\n   判定为「${matched}」，对照期望列名：`));
-      if (!missing.length) {
-        console.log(C.ok(`   列名完全匹配（${expect.length}/${expect.length}）`));
+      if (!missingReq.length) {
+        console.log(C.ok(`   必填列名齐全（${spec.required.length}/${spec.required.length}）`));
       } else {
-        fail(`   缺少列名：${missing.join(' / ')}`);
-        console.log(C.dim('   期望：' + expect.join(' | ')));
+        fail(`   缺少【必填】列名：${missingReq.join(' / ')}`);
+        console.log(C.dim('   必填：' + spec.required.join(' | ')));
         console.log(C.dim('   注意：飞书字段名必须一字不差，包括「SKU」的大小写'));
+      }
+      if (missingOpt.length) {
+        console.log(C.warn(`   缺少【可选】列名：${missingOpt.join(' / ')}`));
+        console.log(C.dim('   可选：' + spec.optional.join(' | ')));
+      }
+      // 「日期 / 周次」二选一这类组合约束
+      if (matched === '广告投放' && !cols.includes('日期') && !cols.includes('周次')) {
+        fail('   「日期」和「周次」至少要有一个 —— 两个都缺，整行广告不参与毛利和 ACOS');
+      }
+
+      // ── 类型检查：比列名更隐蔽的坑
+      //    列名错了会「读不到」，一眼能发现；类型错了是「读到了但是废品」：
+      //    采购价建成文本，num("") 一律返回 0，16 个 SKU 毛利全是售价，
+      //    看板照常出图、不报任何错，等发现时决策已经做错了。
+      const TYPE_NAME = { 1: '文本', 2: '数字', 3: '单选', 4: '多选', 5: '日期', 7: '复选框' };
+      const badNum = (NUMERIC_COLS[matched] || [])
+        .filter((c) => cols.includes(c) && fieldType[c] !== 2)
+        .map((c) => `${c}(${TYPE_NAME[fieldType[c]] || 'type' + fieldType[c]})`);
+      if (badNum.length) {
+        fail(`   这几列必须是【数字】类型，现在是：${badNum.join('、')}`);
+        console.log(C.dim('   飞书里改：点列头 → 编辑字段 → 类型选「数字」。'));
+        console.log(C.dim('   不改的话，这些值会被 num() 吃成 0，毛利/补货全错且不报错。'));
+      } else if (fieldList.length) {
+        const n = (NUMERIC_COLS[matched] || []).filter((c) => cols.includes(c)).length;
+        if (n) console.log(C.ok(`   数值列类型正确（${n} 列）`));
+      }
+
+      const badDate = (DATE_COLS[matched] || [])
+        .filter((c) => cols.includes(c) && fieldType[c] !== 5 && fieldType[c] !== 1)
+        .map((c) => `${c}(${TYPE_NAME[fieldType[c]] || 'type' + fieldType[c]})`);
+      if (badDate.length) {
+        fail(`   这几列必须是【日期】类型，现在是：${badDate.join('、')}`);
+        console.log(C.dim('   文本也勉强能认（会走 normDate 解析），日期类型最稳。'));
       }
     }
 

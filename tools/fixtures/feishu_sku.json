@@ -1,0 +1,233 @@
+{
+ "code": 0,
+ "msg": "ok",
+ "data": {
+  "has_more": false,
+  "page_token": "",
+  "total": 16,
+  "items": [
+   {
+    "record_id": "recvua5QPKdrPI",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-D",
+     "品名": "1666 34cm Double",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 323.79,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1666 34cm Double"
+    }
+   },
+   {
+    "record_id": "recvua5QPKzv2s",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-KS",
+     "品名": "1666 34cm King Single",
+     "品类": [
+      "Mattress"
+     ],
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1666 34cm King Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKMK9C",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-Q",
+     "品名": "1666 34cm Queen",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 400.97,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1666 34cm Queen"
+    }
+   },
+   {
+    "record_id": "recvua5QPKFzR7",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-S",
+     "品名": "1666 34cm Single",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 251.55,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1666 34cm Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKANx6",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-D",
+     "品名": "1667 30cm Double",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 270.23,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1667 30cm Double"
+    }
+   },
+   {
+    "record_id": "recvua5QPKkRWZ",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-K",
+     "品名": "1667 30cm King",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 336.27,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1667 30cm King"
+    }
+   },
+   {
+    "record_id": "recvua5QPKTbOR",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-KS",
+     "品名": "1667 30cm King Single",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 214.93,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1667 30cm King Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKP8vE",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-Q",
+     "品名": "1667 30cm Queen",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 223.49,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1667 30cm Queen"
+    }
+   },
+   {
+    "record_id": "recvua5QPKWwaR",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-S",
+     "品名": "1667 30cm Single",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 220.97,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1667 30cm Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKUyL9",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-D",
+     "品名": "1772 26cm Double",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 219.27,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1772 26cm Double"
+    }
+   },
+   {
+    "record_id": "recvua5QPKOeFG",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-KS",
+     "品名": "1772 26cm King Single",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 141.43,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1772 26cm King Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKWBak",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-Q",
+     "品名": "1772 26cm Queen",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 242.25,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1772 26cm Queen"
+    }
+   },
+   {
+    "record_id": "recvua5QPK0CST",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-S",
+     "品名": "1772 26cm Single",
+     "品类": [
+      "Mattress"
+     ],
+     "售价AUD": 148.37,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1772 26cm Single"
+    }
+   },
+   {
+    "record_id": "recvua5QPKoG5K",
+    "fields": {
+     "SKU": "XFKF-PL-1167F-WH",
+     "品名": "1167F White",
+     "品类": [
+      "Pillow"
+     ],
+     "售价AUD": 15.42,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1167F White"
+    }
+   },
+   {
+    "record_id": "recvua5QPKnf2b",
+    "fields": {
+     "SKU": "XFKF-PL-1168R-WH",
+     "品名": "1168R White",
+     "品类": [
+      "Pillow"
+     ],
+     "售价AUD": 30.87,
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1168R White"
+    }
+   },
+   {
+    "record_id": "recvua5QPKKNWN",
+    "fields": {
+     "SKU": "XFKF-PL-1169R-WH",
+     "品名": "1169R White",
+     "品类": [
+      "Pillow"
+     ],
+     "安全库存天数": 21,
+     "币种": "RMB",
+     "规格": "1169R White"
+    }
+   }
+  ]
+ }
+}

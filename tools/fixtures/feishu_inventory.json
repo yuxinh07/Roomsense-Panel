@@ -1,0 +1,203 @@
+{
+ "code": 0,
+ "msg": "ok",
+ "data": {
+  "has_more": false,
+  "page_token": "",
+  "total": 16,
+  "items": [
+   {
+    "record_id": "recvu8WBg0lW0q",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-D",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 30,
+     "快照日期": 1787846400000,
+     "现有库存": 7
+    }
+   },
+   {
+    "record_id": "recvu8WBg0BAiy",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-D",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 19
+    }
+   },
+   {
+    "record_id": "recvu8WBg0MBhN",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-S",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 10,
+     "快照日期": 1787846400000,
+     "现有库存": 10
+    }
+   },
+   {
+    "record_id": "recvu8WBg0Scpn",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-S",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 10,
+     "快照日期": 1787846400000,
+     "现有库存": 7
+    }
+   },
+   {
+    "record_id": "recvu8WBg0XSMa",
+    "fields": {
+     "SKU": "XFKF-PL-1169R-WH",
+     "品类": [
+      "Pillow"
+     ],
+     "在途": 150,
+     "快照日期": 1787846400000,
+     "现有库存": 0
+    }
+   },
+   {
+    "record_id": "recvua43gOOAkG",
+    "fields": {
+     "SKU": "XFKF-PL-1168R-WH",
+     "品类": [
+      "Pillow"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 27
+    }
+   },
+   {
+    "record_id": "recvua460EYhH6",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-S",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 11
+    }
+   },
+   {
+    "record_id": "recvua460Eq6aC",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-D",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 30,
+     "快照日期": 1787846400000,
+     "现有库存": 0
+    }
+   },
+   {
+    "record_id": "recvua460EYNbr",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-Q",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 20,
+     "快照日期": 1787846400000,
+     "现有库存": 40
+    }
+   },
+   {
+    "record_id": "recvua460EcGav",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-KS",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 13
+    }
+   },
+   {
+    "record_id": "recvua460EfetI",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-KS",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 10,
+     "快照日期": 1787846400000,
+     "现有库存": 12
+    }
+   },
+   {
+    "record_id": "recvua460EJZlz",
+    "fields": {
+     "SKU": "XFKF-PL-1167F-WH",
+     "品类": [
+      "Pillow"
+     ],
+     "在途": 25,
+     "快照日期": 1787846400000,
+     "现有库存": 20
+    }
+   },
+   {
+    "record_id": "recvua460EIK2p",
+    "fields": {
+     "SKU": "XFKF-MA-1772-26-KS",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 10,
+     "快照日期": 1787846400000,
+     "现有库存": 18
+    }
+   },
+   {
+    "record_id": "recvua460EUtso",
+    "fields": {
+     "SKU": "XFKF-MA-1666-34-Q",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 20,
+     "快照日期": 1787846400000,
+     "现有库存": 18
+    }
+   },
+   {
+    "record_id": "recvua460EOIuf",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-Q",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 31
+    }
+   },
+   {
+    "record_id": "recvua460EXSaT",
+    "fields": {
+     "SKU": "XFKF-MA-1667-30-K",
+     "品类": [
+      "Mattress"
+     ],
+     "在途": 0,
+     "快照日期": 1787846400000,
+     "现有库存": 18
+    }
+   }
+  ]
+ }
+}

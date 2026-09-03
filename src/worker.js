@@ -710,11 +710,12 @@ async function buildDashboard(env) {
 /* ============================================================
  * 写入 / 导入
  * ========================================================== */
-async function insertSales(env, rows) {
+async function insertSales(env, rows, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
   if (!rows.length) return 0;
   const meta = await getMeta(env);
   const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
   const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
+  const tz = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
 
   const stmt = env.DB.prepare(
     `INSERT INTO sales_orders(order_date, week_label, platform, order_no, sku, category,
@@ -723,7 +724,7 @@ async function insertSales(env, rows) {
   );
   const batch = rows.map((r) => {
     // 兼容中英文列名：Yitta 的结算单是英文（Order Date / Channel / Qty / Sales Currency / Order Rate to AUD）
-    const date = normDate(r.order_date || r.date || r['订单日期'] || r['Order Date'] || '');
+    const date = normDate(r.order_date || r.date || r['订单日期'] || r['Order Date'] || '', tz);
     // 周次默认从订单日期自动算 —— 所以「周次」不是必填列。
     // 表里填了就以填的为准（临时覆盖用），填错会污染周趋势，
     // 所以写库后由 buildDashboard 拿日期反算一遍，对不上就告警。
@@ -884,10 +885,11 @@ async function importCsv(env, body) {
 /* ============================================================
  * 各类表的写入（CSV 导入与多维表同步共用同一套，保证口径一致）
  * ========================================================== */
-async function upsertInventory(env, records) {
+async function upsertInventory(env, records, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
+  const tz = Number.isFinite(Number(tzOffsetMin)) ? Number(tzOffsetMin) : DEFAULT_TZ_OFFSET_MIN;
   // 快照日期：CSV 里可填「快照日期 / snapshot_date」列补录历史；没填就用今天。
   const snapDate =
-    normDate(records[0]?.snapshot_date || records[0]?.['快照日期'] || '') ||
+    normDate(records[0]?.snapshot_date || records[0]?.['快照日期'] || '', tz) ||
     new Date().toISOString().slice(0, 10);
 
   const rows = records
@@ -897,7 +899,7 @@ async function upsertInventory(env, records) {
       onHand: num(r.on_hand ?? r['现有库存'] ?? 0),
       inbound: num(r.inbound ?? r['在途'] ?? 0),
       safety: num(r.safety_stock ?? r['安全库存'] ?? 0),
-      eta: normDate(r.eta || r['预计到货'] || ''),
+      eta: normDate(r.eta || r['预计到货'] || '', tz),
     }));
   if (!rows.length) return { ok: true, upserted: 0 };
 
@@ -984,6 +986,7 @@ async function insertAds(env, records, metaIn) {
   const meta = metaIn || (await getMeta(env));
   const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
   const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
+  const epochTz = Number(meta.feishu_tz_offset_min ?? DEFAULT_TZ_OFFSET_MIN);
 
   const stmt = env.DB.prepare(
     'INSERT INTO ads(week_label, platform, campaign, spend, ad_sales, orders) VALUES(?,?,?,?,?,?)'
@@ -992,7 +995,7 @@ async function insertAds(env, records, metaIn) {
   let conflict = 0;
   const batch = records.map((r) => {
     const manual = String(r.week_label || r['周次'] || r['Week Label'] || '').trim();
-    const date = normDate(r.week_start_date || r['日期'] || r.date || r['Date'] || '');
+    const date = normDate(r.week_start_date || r['日期'] || r.date || r['Date'] || '', epochTz);
     let week = manual;
     if (!week && date) {
       week = weekOf(date, epochDate, epochWeek);
@@ -1054,20 +1057,24 @@ async function syncFromFeishu(env) {
   }
 
   const token = await getFeishuToken(env);
+  // 飞书日期字段是毫秒时间戳，截断成日期时必须按多维表所在时区偏移，
+  // 否则东八区的 00:00 会被 UTC 截断成前一天（周六 → 周五 → 归错周）。详见 normDate 注释。
+  const meta = await getMeta(env);
+  const tz = Number(meta.feishu_tz_offset_min ?? DEFAULT_TZ_OFFSET_MIN);
 
   // 1) 销售明细：全量替换 source='feishu' 的部分（CSV 导入的数据不会被误删）
   const sales = await fetchAllFeishuRecords(env, token, FEISHU_TABLE_ID);
   let salesCount = 0;
   if (sales.length) {
     await env.DB.prepare('DELETE FROM sales_orders WHERE source=?').bind('feishu').run();
-    salesCount = await insertSales(env, sales.map((f) => ({ ...f, source: 'feishu' })));
+    salesCount = await insertSales(env, sales.map((f) => ({ ...f, source: 'feishu' })), tz);
   }
 
   // 2) 库存：按 SKU 覆盖更新 + 追加当天快照（同日重复同步只覆盖）
   let invCount = 0;
   if (env.FEISHU_TABLE_ID_INV) {
     const rows = await fetchAllFeishuRecords(env, token, env.FEISHU_TABLE_ID_INV);
-    if (rows.length) invCount = (await upsertInventory(env, rows)).upserted || 0;
+    if (rows.length) invCount = (await upsertInventory(env, rows, tz)).upserted || 0;
   }
 
   // 3) 广告投放：全量替换（多维表是唯一来源时最省心）
@@ -1150,6 +1157,9 @@ function flattenFeishuFields(fields) {
  * 工具
  * ========================================================== */
 export { buildDashboard, importCsv, insertSales };
+// 下面这些是飞书同步链路的内部函数，导出是为了 tools/test_feishu_schema.mjs
+// 能用真实表数据做端到端验证 —— 多维表结构一改就跑测试，不用等到线上才发现读不出来。
+export { syncFromFeishu, insertAds, upsertInventory, upsertSkuMaster, flattenFeishuFields };
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), {
@@ -1191,13 +1201,31 @@ function rankP(p) {
   return { P0: 3, P1: 2, P2: 1 }[p] || 0;
 }
 
-function normDate(v) {
+/**
+ * 飞书 datetime 字段经 API 返回的是【毫秒时间戳】，而飞书是按多维表所在时区
+ * 把「日期」存成当地 00:00 的。若直接 toISOString() 截断，会按 UTC 取日期 ——
+ * 东八区的 8/27 00:00 在 UTC 是 8/26 16:00，一转就变成 8/26，整张表日期提前一天。
+ *
+ * 这个偏移不是小事：一周从周六开始，周六的订单被算成周五就会归到【上一周】，
+ * 周趋势、ACOS、补货窗口全跟着错位。所以必须按时区偏移回来再截断。
+ *
+ * 默认东八区（飞书多维表默认 Asia/Shanghai）。你的表时区不是 UTC+8 的话，
+ * 在 meta 里设 feishu_tz_offset_min：单位分钟，东几区就填 60×几（如印度 UTC+5:30 填 330，
+ * 西五区填 -300）。
+ */
+const DEFAULT_TZ_OFFSET_MIN = 480;
+
+function tsToDate(ms, tzOffsetMin) {
+  return new Date(Number(ms) + tzOffsetMin * 60000).toISOString().slice(0, 10);
+}
+
+function normDate(v, tzOffsetMin = DEFAULT_TZ_OFFSET_MIN) {
   const s = String(v ?? '').trim();
   if (!s) return '';
   // 毫秒时间戳（飞书 / Notion 的日期字段会返回这种格式）
-  if (/^\d{13}$/.test(s)) return new Date(Number(s)).toISOString().slice(0, 10);
+  if (/^\d{13}$/.test(s)) return tsToDate(Number(s), tzOffsetMin);
   // 秒级时间戳
-  if (/^\d{10}$/.test(s)) return new Date(Number(s) * 1000).toISOString().slice(0, 10);
+  if (/^\d{10}$/.test(s)) return tsToDate(Number(s) * 1000, tzOffsetMin);
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
   // Excel 序列号（1900 日期系统）
   if (/^\d{5}(\.\d+)?$/.test(s)) {

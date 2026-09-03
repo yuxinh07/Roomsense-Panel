@@ -31,14 +31,18 @@ fi
 FEISHU_APP_ID="${FEISHU_APP_ID:-}"          # cli_a1b2c3d4e5f6g7h8
 FEISHU_APP_SECRET="${FEISHU_APP_SECRET:-}"
 
-# 多维表 URL：https://xxx.feishu.cn/base/BascnXXXXXXXX?table=tblYYYYYYYY
-FEISHU_TABLE_TOKEN="${FEISHU_TABLE_TOKEN:-}"   # /base/ 后面那段
-FEISHU_TABLE_ID="${FEISHU_TABLE_ID:-}"         # 销售明细表 ?table= 后面那段
+# 多维表 URL：https://my.feishu.cn/base/ImJybIKBlauxp4sEdZkcPvpWn8g
+#
+# ↓ 下面 5 个已经按你的「ROOMSENSE看板」填好了（2026-09-03 核对过结构），
+#   一般不用改。换表了再用环境变量覆盖，例如：
+#     FEISHU_TABLE_ID=tblXXXXXX bash tools/setup_feishu.sh
+FEISHU_TABLE_TOKEN="${FEISHU_TABLE_TOKEN:-ImJybIKBlauxp4sEdZkcPvpWn8g}"   # /base/ 后面那段
+FEISHU_TABLE_ID="${FEISHU_TABLE_ID:-tblLVFcCYLwLGdun}"                    # 销售明细
 
 # ───────── 可选：留空 = 不同步该表 ─────────
-FEISHU_TABLE_ID_INV="${FEISHU_TABLE_ID_INV:-}"   # 库存
-FEISHU_TABLE_ID_ADS="${FEISHU_TABLE_ID_ADS:-}"   # 广告投放
-FEISHU_TABLE_ID_SKU="${FEISHU_TABLE_ID_SKU:-}"   # SKU 主数据
+FEISHU_TABLE_ID_INV="${FEISHU_TABLE_ID_INV:-tblHol3lES38B6HJ}"   # 库存
+FEISHU_TABLE_ID_ADS="${FEISHU_TABLE_ID_ADS:-tbl20vkrSmu1O2pK}"   # 广告投放
+FEISHU_TABLE_ID_SKU="${FEISHU_TABLE_ID_SKU:-tbl9CQoZ6jGqpD1a}"   # SKU 主数据
 
 ADMIN_TOKEN="${ADMIN_TOKEN:-Rs@2026roomsense}"
 
