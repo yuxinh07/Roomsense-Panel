@@ -19,7 +19,8 @@
     "test:margin": "node --experimental-sqlite tools/test_margin.mjs",
     "test:week": "node --experimental-sqlite tools/test_week.mjs",
     "test:feishu": "node --experimental-sqlite tools/test_feishu_schema.mjs",
-    "test:all": "npm run test && npm run test:fx && npm run test:margin && npm run test:week && npm run test:feishu && npm run test:ui",
+    "test:fulfil": "node --experimental-sqlite tools/test_fulfil.mjs",
+    "test:all": "npm run test && npm run test:fx && npm run test:margin && npm run test:week && npm run test:fulfil && npm run test:feishu && npm run test:ui",
     "export": "node --experimental-sqlite tools/export_for_multitable.mjs",
     "test:ui": "node tools/test_margin_ui.mjs"
   },

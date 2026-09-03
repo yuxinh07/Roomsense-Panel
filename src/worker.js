@@ -34,6 +34,83 @@ const WEEK_EPOCH_LABEL = 23;
 const DEFAULT_FULFIL_PCT = 30;   // 佣金 + 履约（仓租/入出库/快递）合计占售价的百分比
 const DEFAULT_ADS_ALLOC = 'by_revenue'; // 广告费分摊方式：按营收占比分摊到 SKU
 
+/**
+ * 成本明细的 7 个分项（Yitta 2026-09-03 要求：一项一项填，系统算合计）。
+ *
+ * 为什么要拆：原来只有「履约费率%」和「单件履约费」两个合计值，
+ * 填进去就不知道钱花在哪 —— 快递涨了还是佣金涨了看不出来，也就无从优化。
+ *
+ * 分两类是因为两类成本的行为完全不同：
+ *   perUnit —— 按件收，跟售价不成比例。枕头卖 A$15 快递也要 A$12，
+ *              床垫卖 A$419 快递 A$45，占比差 3 倍。一刀切百分比必错。
+ *   pct     —— 随售价等比变。售价涨多少，佣金就多扣多少。
+ *
+ * ⚠ 广告费不在这 7 项里。广告费走「安全垫 = 毛利率 − ACOS」单独算，
+ *   塞进来会被扣两次（一次算毛利、一次算 ACOS），所有产品都会显示投流亏损。
+ */
+const FULFIL_ITEMS = [
+  { key: 'ship_first_leg', label: '头程运费',     kind: 'perUnit', unit: 'AUD/件' },
+  { key: 'ship_unload',    label: '卸货费',       kind: 'perUnit', unit: 'AUD/件' },
+  { key: 'handling_inout', label: '入出库处理费', kind: 'perUnit', unit: 'AUD/件' },
+  { key: 'ship_last_mile', label: '快递费',       kind: 'perUnit', unit: 'AUD/件' },
+  { key: 'pct_platform',   label: '平台佣金',     kind: 'pct',     unit: '%' },
+  { key: 'pct_payment',    label: '支付手续费',   kind: 'pct',     unit: '%' },
+  { key: 'pct_return',     label: '退货损耗',     kind: 'pct',     unit: '%' },
+];
+// label 同时就是飞书表头和 CSV 表头 —— 一处改名，飞书那边的列也要跟着改，
+// 否则 syncFromFeishu 读不到（列名对不上是静默失败，不报错但值全丢）。
+
+/**
+ * 算出某个 SKU 的履约成本（按件部分 + 按售价%部分）。
+ *
+ * 两种模式，由 meta.fulfil_mode 切换：
+ *
+ *   'pct'（默认，老行为）
+ *     直接用 fulfil_pct / fulfil_per_unit 两个合计值。
+ *     取值：SKU 的值非 0 就用，否则回落 meta 的值。
+ *
+ *   'breakdown'（Yitta 要的新模式）
+ *     用 FULFIL_ITEMS 那 7 项求和。每项取值优先级：SKU 的值 > meta 同名默认值 > 0。
+ *     好处：填了哪些就算哪些，能看见钱花在哪一项，涨价时知道该找谁谈。
+ *
+ * ⚠ breakdown 模式下，没填的项按 0 计入 —— 这会让毛利**被高估**。
+ *   所以这里会把值为 0 的项列进 missing，由调用方放进 warnings 点名告警，
+ *   直到 meta.fulfil_breakdown_confirmed = '1' 才静音。
+ *   宁可一直提醒，也不给一个「看起来正常其实是错的」毛利。
+ */
+export function resolveFulfil(m, meta, mode = 'pct') {
+  if (mode !== 'breakdown') {
+    return {
+      mode: 'pct',
+      fulfilPct: num(m.fulfil_pct) || Number(meta.fulfil_pct ?? DEFAULT_FULFIL_PCT),
+      fulfilPerUnit: num(m.fulfil_per_unit) || Number(meta.fulfil_per_unit ?? 0),
+      items: [],
+      missing: [],
+    };
+  }
+
+  const items = [];
+  const missing = [];
+  let pct = 0;
+  let perUnit = 0;
+
+  for (const it of FULFIL_ITEMS) {
+    // 空串 / null / undefined 都算「没填」，回落到 meta 的全局默认值
+    const own = m[it.key];
+    const ownFilled = own !== undefined && own !== null && own !== '';
+    const global = meta[it.key];
+    const globalFilled = global !== undefined && global !== null && global !== '';
+    const v = num(ownFilled ? own : globalFilled ? global : 0);
+
+    items.push({ key: it.key, label: it.label, kind: it.kind, unit: it.unit, value: round2(v) });
+    if (v <= 0) missing.push(it.label);
+    if (it.kind === 'pct') pct += v;
+    else perUnit += v;
+  }
+
+  return { mode: 'breakdown', fulfilPct: pct, fulfilPerUnit: perUnit, items, missing };
+}
+
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8' };
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -205,6 +282,8 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
   const globalFulfil = Number(meta.fulfil_pct ?? DEFAULT_FULFIL_PCT);
   const globalPerUnit = Number(meta.fulfil_per_unit ?? 0);
   const confirmed = String(meta.fulfil_pct_confirmed || '0') === '1';
+  const mode = String(meta.fulfil_mode || 'pct').toLowerCase();
+  const breakdownConfirmed = String(meta.fulfil_breakdown_confirmed || '0') === '1';
   const master = indexBy(skuMaster, 'sku');
 
   // ---- 1. 该月每 SKU 的营收 / 销量 ----
@@ -285,8 +364,9 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
     // 为什么必须分开：快递和处理费是按件/按重量收的。床垫 A$419 快递 A$45(10.7%)、
     // 枕头 A$38 快递 A$12(31.6%) —— 一刀切 30% 会低估枕头成本、高估床垫成本，加投决策会做反。
     // fulfil_per_unit 为 0 时退化成旧的纯百分比算法，老数据不会炸。
-    const fulfilPct = num(m.fulfil_pct) || globalFulfil;
-    const fulfilPerUnit = num(m.fulfil_per_unit) || globalPerUnit;
+    const rf = resolveFulfil(m, meta, mode);
+    const fulfilPct = rf.fulfilPct;
+    const fulfilPerUnit = rf.fulfilPerUnit;
     const unitFulfil = asp * (fulfilPct / 100) + fulfilPerUnit;
 
     const hasCost = unitCostAud !== null && unitCostAud > 0 && asp > 0;
@@ -311,6 +391,8 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
       unitCostAud: unitCostAud === null ? null : round2(unitCostAud),
       fulfilPct: round2(fulfilPct),
       fulfilPerUnit: round2(fulfilPerUnit),
+      fulfilItems: rf.items,          // 明细模式下是 7 项的逐项值，前端展开用；pct 模式为空数组
+      fulfilMissing: rf.missing,      // 该 SKU 还缺哪些项（值为 0/空）
       unitFulfil: round2(unitFulfil),
       unitMargin: unitMargin === null ? null : round2(unitMargin),
       marginPct: marginPct === null ? null : round2(marginPct),
@@ -329,10 +411,16 @@ export function buildMargin(sales, skuMaster, ads, meta, opts = {}) {
 
   const missingCost = rows.filter((r) => !r.hasCost).length;
 
+  // 明细模式下，把「还有哪些项为 0」汇总成一份去重清单 —— 告警要点名，不能只说「有缺项」
+  const missingItems = uniq(rows.flatMap((r) => r.fulfilMissing || []));
+
   return {
     month,
-    fulfilPct: globalFulfil,
+    fulfilMode: mode,
+    fulfilPct: mode === 'breakdown' ? round2(num(meta.pct_platform) + num(meta.pct_payment) + num(meta.pct_return)) : globalFulfil,
     fulfilPctConfirmed: confirmed,
+    breakdownConfirmed,
+    missingItems,
     fxAudCny,
     adsTotal: round2(adsTotal),
     adsHasData,
@@ -645,7 +733,16 @@ async function buildDashboard(env) {
       `把 multitable/08_SKU成本_待填.csv 的采购价填好再导入（或直接填进飞书表 D 的「采购价」列）就能算。`
     );
   }
-  if (!marginData.fulfilPctConfirmed) {
+  if (marginData.fulfilMode === 'breakdown') {
+    // 明细模式：缺项按 0 计，毛利被高估 —— 点名列出还差哪几项，确认后才静音
+    if (!marginData.breakdownConfirmed && marginData.missingItems.length) {
+      warnings.push(
+        `成本明细模式：有 ${marginData.missingItems.length}/7 项还是 0（${marginData.missingItems.join('、')}）。` +
+        `没填的项按 0 计入成本，等于默认它不花钱 —— 毛利会被高估，别拿这个数字做决策。` +
+        `补齐后把 meta.fulfil_breakdown_confirmed 设为 1 关掉这条。`
+      );
+    }
+  } else if (!marginData.fulfilPctConfirmed) {
     warnings.push(
       `毛利用的是估算费率：佣金+履约合计 ${marginData.fulfilPct}%（澳洲大件家居行业经验值，` +
       `不是 RoomSense 真实费率）。拿到真实费率后填进 meta.fulfil_pct 并把 fulfil_pct_confirmed 设为 1，` +
@@ -945,6 +1042,8 @@ async function upsertSkuMaster(env, records) {
   if (has('fulfil_pct')) extra.push('fulfil_pct');
   if (has('fulfil_per_unit')) extra.push('fulfil_per_unit');
   if (has('lead_time_days')) extra.push('lead_time_days');
+  // 成本明细 7 项。列名和飞书表头都用中文，见 FULFIL_ITEMS 的 label。
+  for (const c of FULFIL_ITEMS) if (has(c.key)) extra.push(c.key);
   const all = base.concat(extra);
 
   const sql =
@@ -973,6 +1072,12 @@ async function upsertSkuMaster(env, records) {
       if (has('fulfil_pct')) vals.push(num(r.fulfil_pct ?? r['履约费率'] ?? 0));
       if (has('fulfil_per_unit')) vals.push(num(r.fulfil_per_unit ?? r['单件履约费'] ?? 0));
       if (has('lead_time_days')) vals.push(num(r.lead_time_days ?? r['补货提前期'] ?? 0));
+      // 成本明细 7 项：优先英文键（CSV/code），其次中文表头（飞书）
+      for (const c of FULFIL_ITEMS) {
+        if (!has(c.key)) continue;
+        const v = r[c.key] ?? r[c.label];
+        vals.push(v === undefined || v === null || v === '' ? null : num(v));
+      }
       return stmt.bind(...vals);
     });
   if (!batch.length) return { ok: true, upserted: 0 };
