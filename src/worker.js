@@ -633,7 +633,7 @@ async function buildDashboard(env) {
     warnings.push(
       `产品定位矩阵：${marginData.missingCost}/${marginData.skuCount} 个 SKU 还没填采购成本，` +
       `这些 SKU 的毛利、毛利率、投流安全垫都算不出来，表格里显示「待填成本」。` +
-      `把 multitable/05_SKU成本_待填.csv 的采购价填好再导入就能算。`
+      `把 multitable/08_SKU成本_待填.csv 的采购价填好再导入（或直接填进飞书表 D 的「采购价」列）就能算。`
     );
   }
   if (!marginData.fulfilPctConfirmed) {
@@ -647,6 +647,29 @@ async function buildDashboard(env) {
     warnings.push(
       `${marginData.month} 没有广告数据（ads 表空或没落在这一月），` +
       `所以「投流后净利」暂时等于毛利、ACOS 显示「—」。广告数据导入后自动补上。`
+    );
+  }
+
+  // 广告行没有周次 → buildMargin 拿周次归月份，归不上就直接跳过，
+  // ACOS 和安全垫会静默偏低。必须显形。
+  const adsNoWeek = adsRows.filter((r) => !String(r.week_label || '').trim());
+  if (adsNoWeek.length) {
+    warnings.push(
+      `有 ${adsNoWeek.length} 行广告数据没有周次，这些行不参与毛利和 ACOS 计算。` +
+      `在广告表填「周次」（如 W35），或填一个「日期」列（该周任意一天即可），系统会自动算周次。`
+    );
+  }
+
+  // 销售明细手填周次与订单日期推算值打架：以手填为准，但要让你知道
+  const weekConflicts = sales.filter((r) => {
+    if (!r.order_date || !r.week_label) return false;
+    const d = weekOf(String(r.order_date).slice(0, 10), epochDate, epochWeek);
+    return d && d !== String(r.week_label);
+  });
+  if (weekConflicts.length) {
+    warnings.push(
+      `有 ${weekConflicts.length} 行销售明细手填的「周次」和订单日期推算出来的对不上（以手填值为准）。` +
+      `销售明细表不用填周次 —— 系统从订单日期自动算，把那列删掉最省心。`
     );
   }
 
@@ -692,7 +715,12 @@ async function insertSales(env, rows) {
   const batch = rows.map((r) => {
     // 兼容中英文列名：Yitta 的结算单是英文（Order Date / Channel / Qty / Sales Currency / Order Rate to AUD）
     const date = normDate(r.order_date || r.date || r['订单日期'] || r['Order Date'] || '');
-    const week = r.week_label || r.week || r['Week Label'] || (date ? weekOf(date, epochDate, epochWeek) : '');
+    // 周次默认从订单日期自动算 —— 所以「周次」不是必填列。
+    // 表里填了就以填的为准（临时覆盖用），填错会污染周趋势，
+    // 所以写库后由 buildDashboard 拿日期反算一遍，对不上就告警。
+    const manualWeek = String(r.week_label || r['周次'] || r.week || r['Week Label'] || '').trim();
+    const derivedWeek = date ? weekOf(date, epochDate, epochWeek) : '';
+    const week = manualWeek || derivedWeek;
     const amt = resolveAmounts(r, meta, week);
     return stmt.bind(
       date,
@@ -939,23 +967,42 @@ async function upsertSkuMaster(env, records) {
   return { ok: true, upserted: batch.length, columns: all.length };
 }
 
-async function insertAds(env, records) {
+async function insertAds(env, records, metaIn) {
+  // 周次可以从日期推：一行广告 = 一个 campaign 一周的汇总，
+  // 填该周任意一天都行 —— weekOf 会把同一周 7 天里的任何一天归到同一个 W 号。
+  const meta = metaIn || (await getMeta(env));
+  const epochDate = meta.week_epoch_date || WEEK_EPOCH_DATE;
+  const epochWeek = Number(meta.week_epoch_label || WEEK_EPOCH_LABEL);
+
   const stmt = env.DB.prepare(
     'INSERT INTO ads(week_label, platform, campaign, spend, ad_sales, orders) VALUES(?,?,?,?,?,?)'
   );
-  const batch = records.map((r) =>
-    stmt.bind(
-      r.week_label || r['周次'] || '',
-      r.platform || r['平台'] || '',
-      r.campaign || r['广告活动'] || '',
-      num(r.spend ?? r['花费'] ?? 0),
-      num(r.ad_sales ?? r['广告销售额'] ?? 0),
-      num(r.orders ?? r['订单数'] ?? 0)
-    )
-  );
-  if (!batch.length) return { ok: true, inserted: 0 };
+  let autoWeek = 0;
+  let conflict = 0;
+  const batch = records.map((r) => {
+    const manual = String(r.week_label || r['周次'] || r['Week Label'] || '').trim();
+    const date = normDate(r.week_start_date || r['日期'] || r.date || r['Date'] || '');
+    let week = manual;
+    if (!week && date) {
+      week = weekOf(date, epochDate, epochWeek);
+      if (week) autoWeek += 1;
+    } else if (week && date) {
+      // 两边都填了：以手填为准，但对不上要显形（跟销售明细一个道理）
+      const d = weekOf(date, epochDate, epochWeek);
+      if (d && d !== week) conflict += 1;
+    }
+    return stmt.bind(
+      week,
+      r.platform || r['平台'] || r['Channel'] || '',
+      r.campaign || r['广告活动'] || r['Campaign'] || '',
+      num(r.spend ?? r['花费'] ?? r['Spend'] ?? 0),
+      num(r.ad_sales ?? r['广告销售额'] ?? r['Ad Sales'] ?? 0),
+      num(r.orders ?? r['订单数'] ?? r['Orders'] ?? 0)
+    );
+  });
+  if (!batch.length) return { ok: true, inserted: 0, autoWeek: 0, conflict: 0 };
   await env.DB.batch(batch);
-  return { ok: true, inserted: batch.length };
+  return { ok: true, inserted: batch.length, autoWeek, conflict };
 }
 
 /* ============================================================
@@ -975,9 +1022,12 @@ async function insertAds(env, records) {
  * 列名（中英文都认，中文优先）：
  *   销售明细：订单日期/平台/订单号/SKU/品类/销量/商品销售额/邮费收入/币种/汇率
  *             （旧格式只填「销售额」也兼容，见 resolveAmounts）
+ *             周次【不用填】，从订单日期自动算；填了就以填的为准（覆盖通道）
  *   库存：    快照日期/SKU/品类/现有库存/在途/安全库存/预计到货
  *             快照日期只取【第一行】给整批用，一次导入别混日期
- *   广告：    周次/平台/广告活动/花费/广告销售额/订单数
+ *   广告：    日期/周次/平台/广告活动/花费/广告销售额/订单数
+ *             日期和周次二选一；只有日期时自动算周次（该周任意一天都行）
+ *             两个都空 → 该行不参与毛利/ACOS，看板会告警
  *   SKU主数据：SKU/品名/品类/规格/采购价/币种/售价AUD/履约费率/补货提前期/安全库存天数
  *
  * 同步策略：

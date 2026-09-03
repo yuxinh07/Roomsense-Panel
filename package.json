@@ -17,7 +17,8 @@
     "test": "node --experimental-sqlite tools/test_local.mjs",
     "test:fx": "node --experimental-sqlite tools/test_fx.mjs",
     "test:margin": "node --experimental-sqlite tools/test_margin.mjs",
-    "test:all": "npm run test && npm run test:fx && npm run test:margin && npm run test:ui",
+    "test:week": "node --experimental-sqlite tools/test_week.mjs",
+    "test:all": "npm run test && npm run test:fx && npm run test:margin && npm run test:week && npm run test:ui",
     "export": "node --experimental-sqlite tools/export_for_multitable.mjs",
     "test:ui": "node tools/test_margin_ui.mjs"
   },
