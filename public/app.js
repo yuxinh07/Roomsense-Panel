@@ -829,12 +829,35 @@ function applyKpi(D) {
   set('kpi-week', kpi.thisWeek);
   set('kpi-net', kpi.netJuly);
   set('kpi-ads', kpi.adsJuly);
-  if (D.meta) {
+    if (D.meta) {
     const up = document.getElementById('meta-updated');
     if (up && D.meta.updatedAt) up.textContent = '更新时间：' + D.meta.updatedAt;
     const pr = document.getElementById('meta-period');
     if (pr && D.meta.period) pr.textContent = '数据周期：' + D.meta.period;
   }
+  renderWarnings(D.warnings);
+}
+
+/**
+ * 数据质量告警。目前主要是「非 AUD 但没配到汇率」——
+ * 这类问题不报错、页面也不崩，只会让营收悄悄少一块，所以必须显形。
+ */
+function renderWarnings(warnings) {
+  const box = document.getElementById('data-warnings');
+  if (!box) return;
+  const list = (warnings || []).filter(Boolean);
+  if (!list.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML =
+    '<b>⚠ 数据质量提醒（' + list.length + ' 条）</b><ul>' +
+    list.map(function () { return '<li></li>'; }).join('') +
+    '</ul>';
+  // 用 textContent 逐条写入，避免告警文本被当成 HTML 解析
+  box.querySelectorAll('li').forEach(function (li, i) { li.textContent = list[i]; });
 }
 
 function setStatus(text, ok) {

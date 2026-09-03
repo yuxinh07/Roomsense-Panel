@@ -15,13 +15,14 @@ db.exec(fs.readFileSync(path.join(ROOT, 'schema.sql'), 'utf8'));
 db.exec(fs.readFileSync(path.join(ROOT, 'seed.sql'), 'utf8'));
 console.log('✔ schema + seed 执行成功');
 
-/** 把 node:sqlite 包装成 D1 的接口形态 */
+/** 把 node:sqlite 包装成 D1 的接口形态
+ *  注意：bind() 必须返回【新的】statement。真实 D1 的 bind 返回新对象，
+ *  如果这里返回同一个 stmt，batch 里的多行会共享 args，导致全被最后一行覆盖。 */
 function d1Adapter(sqlite) {
   return {
     prepare(sql) {
-      let args = [];
-      const stmt = {
-        bind(...a) { args = a; return stmt; },
+      const make = (args) => ({
+        bind(...a) { return make(a); },
         all() {
           try { return Promise.resolve({ results: sqlite.prepare(sql).all(...args) }); }
           catch (e) { console.error('SQL 失败:', sql, args, e.message); return Promise.resolve({ results: [] }); }
@@ -34,8 +35,8 @@ function d1Adapter(sqlite) {
           const rows = sqlite.prepare(sql).all(...args);
           return Promise.resolve(rows[0] || null);
         },
-      };
-      return stmt;
+      });
+      return make([]);
     },
     batch(stmts) {
       for (const s of stmts) s.run();

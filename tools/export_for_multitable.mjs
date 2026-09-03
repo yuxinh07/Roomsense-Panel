@@ -26,7 +26,9 @@ function csv(headers, rows) {
     const s = String(v ?? '');
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
-  return [headers.join(',')]
+  // ﻿ = UTF-8 BOM。飞书 / Excel 导入中文 CSV 没 BOM 会乱码；
+  // 再导回系统时 worker 的 parseCsv 会自动剥掉 BOM，不影响解析
+  return '\uFEFF' + [headers.join(',')]
     .concat(rows.map((r) => headers.map((h) => esc(r[h])).join(',')))
     .join('\n') + '\n';
 }
@@ -84,16 +86,23 @@ fs.writeFileSync(path.join(OUT, '05_平台周销售额.csv'),
 files.push(['05_平台周销售额.csv', plat.length + ' 行']);
 
 // ---------- 6. 销售明细（空白模板，每周往这里填） ----------
+// 口径（2026-09-03）：营收(AUD) = (商品销售额 + 邮费收入) × 汇率
+//   商品销售额 / 邮费收入 填【原币种】金额，币种填 AUD 或 USD
+//   汇率列可留空 —— 留空时会去后台 meta 里找 fx_{币种}_aud（支持按周 fx_usd_aud.W35）
+//   如果一行只有「销售额」（旧格式），且币种是 AUD 或留空 → 原值直接当 AUD，不折算
 const TPL = [
-  ['2026-08-24', 'Bunnings', 'BN-1001', 'XFKF-MA-1772-26-Q', '床垫', 1, 459.00],
-  ['2026-08-25', 'Amazon Marketplace', 'AM-2003', 'XFKF-PL-1167F-WH', '枕头', 2, 43.00],
+  // 日期, 平台, 订单号, SKU, 品类, 销量, 商品销售额, 邮费收入, 币种, 汇率
+  ['2026-08-24', 'Bunnings', 'BN-1001', 'XFKF-MA-1772-26-Q', '床垫', 1, 419.00, 40.00, 'AUD', ''],
+  ['2026-08-25', 'Amazon Marketplace', 'AM-2003', 'XFKF-PL-1167F-WH', '枕头', 2, 38.00, 5.00, 'USD', ''],
+  ['2026-08-26', 'Kmart', 'KM-3007', 'XFKF-MA-1666-34-S', '床垫', 1, 259.00, 0, 'AUD', ''],
 ];
 fs.writeFileSync(path.join(OUT, '06_销售明细_每周填写.csv'),
-  csv(['订单日期', '平台', '订单号', 'SKU', '品类', '销量', '销售额'],
+  csv(['订单日期', '平台', '订单号', 'SKU', '品类', '销量', '商品销售额', '邮费收入', '币种', '汇率'],
     TPL.map((r) => ({
-      订单日期: r[0], 平台: r[1], 订单号: r[2], SKU: r[3], 品类: r[4], 销量: r[5], 销售额: r[6],
+      订单日期: r[0], 平台: r[1], 订单号: r[2], SKU: r[3], 品类: r[4],
+      销量: r[5], 商品销售额: r[6], 邮费收入: r[7], 币种: r[8], 汇率: r[9],
     }))), 'utf8');
-files.push(['06_销售明细_每周填写.csv', '模板 2 行（示例）']);
+files.push(['06_销售明细_每周填写.csv', '模板 3 行（含 USD 示例）']);
 
 // ---------- 7. 广告投放（空白模板） ----------
 fs.writeFileSync(path.join(OUT, '07_广告投放.csv'),

@@ -13,7 +13,9 @@
     "db:query": "wrangler d1 execute roomsense-db --command=",
     "secret:token": "wrangler secret put ADMIN_TOKEN",
     "build:frontend": "python3 tools/build_frontend.py",
-    "build:seed": "python3 tools/build_seed.py"
+    "build:seed": "python3 tools/build_seed.py",
+    "test": "node --experimental-sqlite tools/test_local.mjs",
+    "test:fx": "node --experimental-sqlite tools/test_fx.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

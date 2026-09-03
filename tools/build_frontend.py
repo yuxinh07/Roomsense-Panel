@@ -120,12 +120,35 @@ function applyKpi(D) {
   set('kpi-week', kpi.thisWeek);
   set('kpi-net', kpi.netJuly);
   set('kpi-ads', kpi.adsJuly);
-  if (D.meta) {
+    if (D.meta) {
     const up = document.getElementById('meta-updated');
     if (up && D.meta.updatedAt) up.textContent = '更新时间：' + D.meta.updatedAt;
     const pr = document.getElementById('meta-period');
     if (pr && D.meta.period) pr.textContent = '数据周期：' + D.meta.period;
   }
+  renderWarnings(D.warnings);
+}
+
+/**
+ * 数据质量告警。目前主要是「非 AUD 但没配到汇率」——
+ * 这类问题不报错、页面也不崩，只会让营收悄悄少一块，所以必须显形。
+ */
+function renderWarnings(warnings) {
+  const box = document.getElementById('data-warnings');
+  if (!box) return;
+  const list = (warnings || []).filter(Boolean);
+  if (!list.length) {
+    box.hidden = true;
+    box.innerHTML = '';
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML =
+    '<b>⚠ 数据质量提醒（' + list.length + ' 条）</b><ul>' +
+    list.map(function () { return '<li></li>'; }).join('') +
+    '</ul>';
+  // 用 textContent 逐条写入，避免告警文本被当成 HTML 解析
+  box.querySelectorAll('li').forEach(function (li, i) { li.textContent = list[i]; });
 }
 
 function setStatus(text, ok) {
@@ -209,6 +232,13 @@ if (document.readyState === 'loading') {
     .sync-status{display:inline-block;margin-left:8px;padding:2px 10px;border-radius:999px;font-size:12px;font-weight:600}
     .sync-status.ok{background:#dcfce7;color:#166534}
     .sync-status.warn{background:#fef3c7;color:#92400e}
+    /* 数据质量告警条：汇率缺失等会在这里显形，避免营收悄悄少一块 */
+    .data-warnings{max-width:1100px;margin:14px auto 0;padding:10px 14px;border-radius:8px;
+      background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;font-size:13px;line-height:1.6}
+    .data-warnings[hidden]{display:none}
+    .data-warnings b{display:block;margin-bottom:2px}
+    .data-warnings ul{margin:4px 0 0;padding-left:18px}
+    .data-warnings li{margin:2px 0}
     .admin-entry{position:fixed;right:18px;bottom:18px;z-index:99;display:flex;gap:8px}
     .admin-entry a{padding:10px 16px;border-radius:10px;background:#4f46e5;color:#fff;
       text-decoration:none;font-size:13px;font-weight:600;box-shadow:0 6px 18px rgba(79,70,229,.35)}
@@ -222,6 +252,13 @@ if (document.readyState === 'loading') {
         '<span class="dot" data-page-node-id="MbrfOG59voNdPFkBBstE7O"></span>',
         '<span class="dot" data-page-node-id="MbrfOG59voNdPFkBBstE7O"></span>'
         '<span id="sync-status" class="sync-status">● 正在加载数据…</span>', 1)
+
+    # 数据质量告警容器（放在 KPI Cards 之前，没有告警时由 JS 隐藏）
+    html = html.replace(
+        '<!-- KPI Cards -->',
+        '<!-- 数据质量告警：由 app.js 按 DATA.warnings 填充，无告警时隐藏 -->\n'
+        '  <div id="data-warnings" class="data-warnings" hidden></div>\n\n'
+        '  <!-- KPI Cards -->', 1)
 
     # 原内联 <script>...</script> 已被移除，这里改为引用拆分后的两个外部脚本
     inject = (

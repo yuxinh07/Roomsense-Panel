@@ -1,3 +1,4 @@
-订单日期,平台,订单号,SKU,品类,销量,销售额
-2026-08-24,Bunnings,BN-1001,XFKF-MA-1772-26-Q,床垫,1,459
-2026-08-25,Amazon Marketplace,AM-2003,XFKF-PL-1167F-WH,枕头,2,43
+﻿订单日期,平台,订单号,SKU,品类,销量,商品销售额,邮费收入,币种,汇率
+2026-08-24,Bunnings,BN-1001,XFKF-MA-1772-26-Q,床垫,1,419,40,AUD,
+2026-08-25,Amazon Marketplace,AM-2003,XFKF-PL-1167F-WH,枕头,2,38,5,USD,
+2026-08-26,Kmart,KM-3007,XFKF-MA-1666-34-S,床垫,1,259,0,AUD,

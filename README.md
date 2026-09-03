@@ -104,16 +104,36 @@ npm run dev            # http://localhost:8787
 
 打开 `/admin.html` → 填 API 地址和 ADMIN_TOKEN → 粘贴 CSV → 导入。
 
-平台后台导出的订单整理成这 7 列即可：
+平台后台导出的订单整理成这 10 列：
 
 ```csv
-order_date,platform,order_no,sku,category,qty,revenue
-2026-08-24,Bunnings,BN-1001,XFKF-MA-1772-26-Q,床垫,1,459.00
-2026-08-25,Amazon Marketplace,AM-2003,XFKF-PL-1167F-WH,枕头,2,86.00
+订单日期,平台,订单号,SKU,品类,销量,商品销售额,邮费收入,币种,汇率
+2026-08-24,Bunnings,BN-1001,XFKF-MA-1772-26-Q,床垫,1,419.00,40.00,AUD,
+2026-08-25,Amazon Marketplace,AM-2003,XFKF-PL-1167F-WH,枕头,2,38.00,5.00,USD,
 ```
 
 **周次不用填**：系统按你的口径自动算（2026-06-07 = W23 第一天，每 7 天 +1）。
 推荐用「替换本周」模式，重导不重复。
+
+### 金额口径：多币种 + 邮费收入
+
+```
+营收(AUD) = (商品销售额 + 邮费收入) × 汇率
+```
+
+- `商品销售额` / `邮费收入` 填**原币种**金额，`币种` 写 `AUD` 或 `USD`
+- `汇率` 列**可以整列留空**，留空时按优先级找后台 meta：
+  行内汇率 > `fx_{币种}_aud.{W##}`（按周）> `fx_{币种}_aud`（全局）
+- **AUD 永远不折算**；非 AUD 找不到汇率时营收记 **0**，并在看板顶部给出告警条，
+  **不会静默按 1 折算**（宁可让你看见数字掉了，也不给你一个看起来正常其实是错的营收）
+
+旧格式仍然兼容：只给 `销售额`、币种留空或写 AUD → 原值直接当 AUD。
+
+配全局美元汇率：
+
+```sql
+INSERT OR REPLACE INTO meta(key, value) VALUES('fx_usd_aud', '1.50');
+```
 
 ### 方式 B：接多维表（飞书）
 
@@ -142,7 +162,8 @@ npx wrangler secret put FEISHU_TABLE_ID_SKU  # 可选
 三个必踩的坑：
 1. 飞书应用必须**发布版本**，否则权限不生效
 2. 多维表必须**把该应用加为协作者**
-3. 列名要完全一致（中文）：`订单日期/平台/订单号/SKU/品类/销量/销售额`
+3. 列名要完全一致（中文）：
+   `订单日期/平台/订单号/SKU/品类/销量/商品销售额/邮费收入/币种/汇率`
 
 `wrangler.toml` 里已配好 cron `*/30 * * * *`，每 30 分钟自动同步；
 也可以在后台点「立即同步」手动触发。
@@ -218,10 +239,14 @@ npx wrangler d1 execute roomsense-db --command="UPDATE meta SET value='2026-06-0
 ## 八、本地自检
 
 ```bash
-node --experimental-sqlite tools/test_local.mjs
+npm test        # 回归：建表 + 灌数据 + 聚合 + 导入，验证输出与现有看板一致
+npm run test:fx # 多币种专项：USD/EUR 折算、邮费相加、按周汇率、缺汇率告警、BOM 回导
 ```
 
-会用内存 SQLite 跑一遍建表、灌数据、聚合、导入，验证输出与现有看板一致。
+两个都用内存 SQLite 模拟 D1，**不需要部署、不碰线上数据**。
+
+改了 `resolveAmounts`（金额折算）或 `schema.sql` 的金额列之后，
+**必须两个都跑一遍** —— 多币种算错不会报错，只会让营收悄悄偏掉。
 
 ---
 

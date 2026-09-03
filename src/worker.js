@@ -346,6 +346,19 @@ async function buildDashboard(env) {
     adsJuly: ov['kpi.adsJuly'] ?? null,
   };
 
+  // 数据质量告警：非 AUD 却没配到汇率的行，营收按 0 计，不静默按 1 折算
+  const warnings = [];
+  const fxMissing = sales.filter(
+    (r) => r.currency && String(r.currency).toUpperCase() !== 'AUD' && !num(r.fx_rate)
+  );
+  if (fxMissing.length) {
+    const curs = uniq(fxMissing.map((r) => String(r.currency).toUpperCase())).join(' / ');
+    warnings.push(
+      `有 ${fxMissing.length} 行是 ${curs} 但没配到汇率，这些行的营收按 0 计。` +
+      `请在后台设置 meta.fx_usd_aud（或按周设 fx_usd_aud.W##）后重新导入。`
+    );
+  }
+
   return {
     weeklyData,
     skuWeeklyData,
@@ -354,6 +367,7 @@ async function buildDashboard(env) {
     invData,
     invSuggestData,
     kpi,
+    warnings,
     meta: {
       period: meta.period || '',
       updatedAt: new Date().toISOString().slice(0, 16).replace('T', ' '),
@@ -361,6 +375,9 @@ async function buildDashboard(env) {
       lastWeek,
       weeks: finalWeeks,
       fxAudCny: Number(meta.fx_aud_cny || 0),
+      fxRates: Object.fromEntries(
+        Object.entries(meta).filter(([k]) => k.startsWith('fx_'))
+      ),
       source: 'd1',
     },
   };
@@ -376,12 +393,16 @@ async function insertSales(env, rows) {
   const epochWeek = Number(meta.week_epoch_label || 23);
 
   const stmt = env.DB.prepare(
-    `INSERT INTO sales_orders(order_date, week_label, platform, order_no, sku, category, qty, revenue, source)
-     VALUES(?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO sales_orders(order_date, week_label, platform, order_no, sku, category,
+                              qty, goods, shipping, currency, fx_rate, revenue, source)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`
   );
   const batch = rows.map((r) => {
     const date = normDate(r.order_date || r.date || r['订单日期'] || '');
     const week = r.week_label || r.week || (date ? weekOf(date, epochDate, epochWeek) : '');
+    // 周次是算出来的，CSV 里通常没有这一列，必须显式传进去，
+    // 否则按周汇率（fx_usd_aud.W34）永远匹配不上，只会掉到全局汇率
+    const amt = resolveAmounts(r, meta, week);
     return stmt.bind(
       date,
       week,
@@ -390,12 +411,77 @@ async function insertSales(env, rows) {
       r.sku || r['SKU'] || '',
       r.category || r['品类'] || '',
       num(r.qty ?? r['销量'] ?? 0),
-      num(r.revenue ?? r['销售额'] ?? 0),
+      amt.goods,
+      amt.shipping,
+      amt.currency,
+      amt.fx,
+      amt.revenueAud,
       r.source || 'api'
     );
   });
   await env.DB.batch(batch);
   return batch.length;
+}
+
+/**
+ * 金额解析：把一行明细折算成 AUD 营收
+ *
+ * 口径（2026-09-03 与 Yitta 确认）：
+ *   营收(AUD) = (商品销售额 + 邮费收入) × 汇率
+ *
+ * 支持三种填法，按优先级：
+ *   1. 填了「商品销售额」和/或「邮费收入」→ 按构成相加再折算
+ *   2. 只填「销售额」+ 币种非 AUD            → 整笔按汇率折算
+ *   3. 只填「销售额」+ 币种是 AUD 或留空     → 视为 AUD 终值，fx=1（兼容历史数据）
+ *
+ * 汇率优先级：行内「汇率」> 按周 fx_{币种}_aud.W## > 全局 fx_{币种}_aud
+ *   AUD → 恒为 1（不查表，避免误套美元汇率）
+ *   其他币种取不到汇率时 fx=0，营收按 0 计（不静默按 1 折算，避免数字失真）
+ */
+// 导出是为了 tools/test_fx.mjs 能直接单测；Worker 只认 default 导出，多导出无害
+export function resolveAmounts(r, meta, weekOverride) {
+  const pick = (...keys) => {
+    for (const k of keys) {
+      const v = r[k];
+      if (v !== undefined && v !== null && String(v).trim() !== '') return v;
+    }
+    return undefined;
+  };
+
+  const cur = String(pick('currency', '币种') || 'AUD').trim().toUpperCase();
+
+  const goodsRaw = pick('goods', '商品销售额', '平台销售额');
+  const shipRaw = pick('shipping', '邮费收入', '运费收入', '邮费', '运费');
+  const revenueRaw = pick('revenue', '销售额', '营收');
+  const fxRaw = pick('fx_rate', '汇率');
+  const week = weekOverride || r.week_label || r.week || r['周次'];
+
+  // 按币种查汇率，key 形如 fx_usd_aud / fx_usd_aud.W35
+  // 注意不能写死 fx_usd_aud：否则 EUR 行会错误套用美元汇率
+  const fxKey = `fx_${(cur || 'AUD').toLowerCase()}_aud`;
+
+  let fx = num(fxRaw ?? 0);
+  if (!fx) {
+    fx =
+      Number(meta[`${fxKey}.${week}`] || 0) ||
+      Number(meta[fxKey] || 0) ||
+      (cur === 'AUD' ? 1 : 0); // AUD 恒为 1；其他币种配不到就是 0
+  }
+  if (cur === 'AUD' && !num(fxRaw ?? 0)) fx = 1; // 双保险：AUD 永不折算
+
+  const hasCompose = goodsRaw !== undefined || shipRaw !== undefined;
+  let goods;
+  let shipping;
+
+  if (hasCompose) {
+    goods = num(goodsRaw ?? 0);
+    shipping = num(shipRaw ?? 0);
+  } else {
+    goods = num(revenueRaw ?? 0);
+    shipping = 0;
+  }
+
+  return { goods, shipping, currency: cur || 'AUD', fx, revenueAud: (goods + shipping) * fx };
 }
 
 async function importCsv(env, body) {
@@ -741,7 +827,12 @@ async function requireAdmin(request, env) {
 function parseCsv(text) {
   const rows = [];
   let row = [], cur = '', inQ = false;
-  const s = String(text).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  // 剥掉 UTF-8 BOM —— 从多维表 / Excel 导出的 CSV 通常带 BOM，
+  // 不剥掉第一个表头会变成「\uFEFF订单日期」，导致所有列匹配不上
+  const s = String(text)
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
   for (let i = 0; i < s.length; i++) {
     const c = s[i];
     if (inQ) {
